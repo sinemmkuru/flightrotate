@@ -1,0 +1,20 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Veritabani
+*.db
+*.db-journal
+*.db-wal
+
+# Frontend
+node_modules/
+dist/
+
+# Ortam degiskenleri
+.env
+
+# OS
+.DS_Store
