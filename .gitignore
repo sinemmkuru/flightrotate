@@ -6,8 +6,9 @@ __pycache__/
 
 # Veritabani
 *.db
-*.db-journal
+*.db-shm
 *.db-wal
+*.db-journal
 
 # Frontend
 node_modules/
