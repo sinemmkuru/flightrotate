@@ -19,11 +19,13 @@ from persistence.models import Airport, Flight, Aircraft
 from engine.geo import haversine, estimate_flight_duration_minutes
 
 
-# Size presets: (flight_count, aircraft_count)
+# Size presets: (flight_count, aircraft_count).
+# Aircraft-to-flight ratio of ~1/8 matches realistic fleet sizing:
+# a B737-800 can typically fly 8-10 legs per day.
 SIZE_PRESETS = {
-    "small": (40, 5),
-    "medium": (200, 12),
-    "large": (700, 35),
+    "small": (40, 8),
+    "medium": (200, 25),
+    "large": (700, 70),
 }
 
 # Hub weights: probability bias for airport selection.
@@ -40,7 +42,9 @@ HUB_WEIGHTS = {
 # Peak hours (24h format): flights are biased toward these windows.
 MORNING_PEAK = (6, 9)
 EVENING_PEAK = (17, 20)
-
+# Probability that a flight departs during a peak window.
+# Lower value = more even distribution across the operating day.
+PEAK_HOUR_PROBABILITY = 0.35
 
 def _weighted_airport_choice(operational_codes, weights):
     """
@@ -67,17 +71,22 @@ def _weighted_airport_choice(operational_codes, weights):
 
 def _random_departure_time(base_date):
     """
-    Generates a departure time biased toward peak hours.
-    60% of flights depart during morning or evening peaks.
+    Generates a departure time biased toward peak hours but balanced
+    enough to allow long aircraft rotations across the operating day.
+
+    Without sufficient mid-day flights, an aircraft that lands at 09:30
+    cannot connect to a next flight until evening, breaking its rotation.
+    The PEAK_HOUR_PROBABILITY constant controls how strongly we cluster
+    flights at the peaks.
     """
-    if random.random() < 0.6:
-        # Peak flight: pick morning or evening window
+    if random.random() < PEAK_HOUR_PROBABILITY:
+        # Peak flight
         if random.random() < 0.5:
             hour = random.randint(*MORNING_PEAK)
         else:
             hour = random.randint(*EVENING_PEAK)
     else:
-        # Off-peak flight: any time during operating hours (06:00 - 22:00)
+        # Off-peak flight: uniformly across the operating day (06:00 - 22:00)
         hour = random.randint(6, 22)
 
     minute = random.choice([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55])
@@ -128,7 +137,28 @@ def generate_flights(size="medium", seed=None, target_date=None):
         # Bases are weighted toward hubs too
         aircraft_list = []
         for i in range(aircraft_count):
-            base_code = _weighted_airport_choice(operational_codes, HUB_WEIGHTS)
+           # Distribute aircraft across hubs proportionally to their
+            # share of flight origins. This matches real airline practice:
+            # bigger hubs need more aircraft based there.
+            #
+            # IST gets ~30% of flights -> ~30% of aircraft.
+            # Hubs are listed in HUB_WEIGHTS in priority order.
+            hub_order = list(HUB_WEIGHTS.keys())  # IST, SAW, ESB, ADB, AYT
+            # Weighted slot assignment: hub priority * total aircraft
+            hub_quotas = {
+                hub: max(1, round(HUB_WEIGHTS[hub] * aircraft_count))
+                for hub in hub_order
+            }
+            # Build a flat list of hub slots respecting the quotas
+            hub_slots = []
+            for hub, quota in hub_quotas.items():
+                hub_slots.extend([hub] * quota)
+            # Assign each aircraft to a hub slot, falling back to weighted
+            # random for any extras beyond the quota total
+            if i < len(hub_slots):
+                base_code = hub_slots[i]
+            else:
+                base_code = _weighted_airport_choice(operational_codes, HUB_WEIGHTS)
             tail = f"TC-J{chr(65 + i // 10)}{chr(65 + i % 10)}"  # TC-JAA, TC-JAB, ...
             aircraft = Aircraft(
                 tail_number=tail,
