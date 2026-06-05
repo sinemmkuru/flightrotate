@@ -1,0 +1,46 @@
+/* KPI card: a single headline metric */
+
+.kpi-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 20px 24px;
+  min-width: 180px;
+  flex: 1;
+}
+
+.kpi-blue {
+  border-left-color: var(--accent-blue);
+}
+.kpi-green {
+  border-left-color: var(--accent-green);
+}
+.kpi-orange {
+  border-left-color: var(--accent-orange);
+}
+.kpi-red {
+  border-left-color: var(--accent-red);
+}
+
+.kpi-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.kpi-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.kpi-unit {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
