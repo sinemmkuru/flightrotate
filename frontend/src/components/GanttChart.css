@@ -1,0 +1,108 @@
+/*
+  Gantt chart styles. vis-timeline ships its own base CSS (imported in the
+  JSX); we override colors here to fit our dark theme.
+*/
+
+.gantt-container {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 400px;
+}
+
+/* --- vis-timeline dark theme overrides --- */
+
+.vis-timeline {
+  border: none;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+
+.vis-panel.vis-center,
+.vis-panel.vis-left,
+.vis-panel.vis-right,
+.vis-panel.vis-top,
+.vis-panel.vis-bottom {
+  border-color: var(--border-color);
+}
+
+.vis-time-axis .vis-text {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.vis-time-axis .vis-grid.vis-minor {
+  border-color: rgba(255, 255, 255, 0.05);
+}
+.vis-time-axis .vis-grid.vis-major {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.vis-labelset .vis-label {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 13px;
+  padding-right: 12px;
+  border-color: var(--border-color);
+}
+
+.vis-foreground .vis-group {
+  border-color: var(--border-color);
+}
+
+.vis-current-time {
+  background-color: var(--accent-blue);
+  width: 2px;
+}
+
+/* --- Flight blocks --- */
+
+.vis-item.flight-normal {
+  background-color: rgba(63, 185, 80, 0.2);
+  border-color: var(--accent-green);
+  border-width: 1px;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.vis-item.flight-normal.vis-selected {
+  background-color: rgba(63, 185, 80, 0.45);
+  border-color: var(--accent-green);
+}
+
+.vis-item.flight-warning {
+  background-color: rgba(240, 136, 62, 0.2);
+  border-color: var(--accent-orange);
+  border-width: 1px;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.vis-item.flight-warning.vis-selected {
+  background-color: rgba(240, 136, 62, 0.45);
+}
+
+.vis-item small {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+/* --- Tooltip --- */
+
+.vis-tooltip {
+  background-color: var(--bg-tertiary) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}

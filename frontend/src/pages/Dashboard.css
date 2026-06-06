@@ -142,3 +142,12 @@
 .assignment-table tr.row-warning:hover {
   background-color: rgba(240, 136, 62, 0.15);
 }
+
+/* --- Gantt section --- */
+
+.gantt-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}

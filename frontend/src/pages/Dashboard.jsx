@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { listRuns, runOptimization, getAssignments } from "../api/client";
 import useAppStore from "../store/useAppStore";
 import KpiCard from "../components/KpiCard";
+import GanttChart from "../components/GanttChart";
 
 import "./Dashboard.css";
 
@@ -153,6 +154,11 @@ function Dashboard() {
               unit="s"
               accent="blue"
             />
+          </section>
+
+          <section className="gantt-section">
+            <h3>Aircraft Rotations</h3>
+            <GanttChart assignments={assignments} />
           </section>
 
           <section className="assignment-section">
