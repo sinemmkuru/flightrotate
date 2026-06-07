@@ -76,13 +76,8 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
             detail=f"Weights must sum to ~1.0 (got {weight_total:.3f})",
         )
 
-    # --- 3. Currently only the genetic algorithm is implemented ---
-    if request.algorithm != "genetic":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Algorithm '{request.algorithm}' is not yet implemented. "
-                   f"Use 'genetic'.",
-        )
+    # --- 3. Currently only the genetic algorithm is implemented. Bu kısmı sildik. adece GA varken eklenmiş bir erken guard---
+    
 
     # --- 4. Build the FCG ---
     graph = build_flight_connection_graph(flights)
@@ -104,15 +99,24 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
     else:
         params_dict = DEFAULT_GA_PARAMS
 
-    # --- 6. Run the GA ---
-    result = run_genetic_algorithm(
-        flights=flights,
-        aircraft_list=aircraft_list,
-        graph=graph,
-        weights=weights_dict,
-        params=params_dict,
-        seed=request.seed,
-    )
+    # --- 6. Run the optimizer ---
+    if request.algorithm == "cp_sat":
+        from engine.cp_sat_solver import run_cp_sat
+        result = run_cp_sat(
+            flights=flights,
+            aircraft_list=aircraft_list,
+            graph=graph,
+            weights=weights_dict,
+        )
+    else:
+        result = run_genetic_algorithm(
+            flights=flights,
+            aircraft_list=aircraft_list,
+            graph=graph,
+            weights=weights_dict,
+            params=params_dict,
+            seed=request.seed,
+        )
 
     # --- 7. Persist the run ---
     run_id = str(uuid.uuid4())
