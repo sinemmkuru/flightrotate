@@ -17,7 +17,13 @@ from pydantic import BaseModel, Field
 
 from services.flight_generator import generate_flights
 from persistence.database import SessionLocal
-from persistence.models import Flight, Aircraft
+from persistence.models import (
+    Flight,
+    Aircraft,
+    Assignment,
+    OptimizationRun,
+    FlightConnection,
+)
 
 
 router = APIRouter()
@@ -40,13 +46,18 @@ class SampleResponse(BaseModel):
 def generate_sample(request: SampleRequest):
     """
     Generates a synthetic flight schedule and aircraft fleet.
-
     If clear_existing is True (default), wipes flights and aircraft before
     generating new ones. Airports are left untouched.
     """
     if request.clear_existing:
         db = SessionLocal()
         try:
+            # FK-safe delete order: children before parents.
+            # SQLite's foreign_keys=ON pragma rejects deletes that would
+            # orphan referencing rows, so assignments and runs go first.
+            db.query(Assignment).delete()
+            db.query(OptimizationRun).delete()
+            db.query(FlightConnection).delete()
             db.query(Flight).delete()
             db.query(Aircraft).delete()
             db.commit()

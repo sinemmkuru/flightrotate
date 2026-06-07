@@ -259,6 +259,7 @@ function NumberField({ label, value, min, max, step, onChange, isFloat }) {
         onChange={(e) => {
           // Accept both comma and dot as decimal separator (Turkish locales
           // use comma; parseFloat needs dot)
+          // 0,15 olarak mutation yapabiliyoruz. 0.15 olmuyordu. python kodunda da virgul kullaniyordu. bu düzeltildi.
           const normalized = e.target.value.replace(",", ".");
           const parsed = isFloat
             ? parseFloat(normalized)
