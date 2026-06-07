@@ -59,4 +59,10 @@ export async function getAssignments(runId) {
   return res.data;
 }
 
+// Map view: all airports
+export async function getAirports() {
+  const res = await client.get("/airports");
+  return res.data;
+}
+
 export default client;

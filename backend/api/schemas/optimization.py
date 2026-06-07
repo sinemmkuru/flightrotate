@@ -127,3 +127,13 @@ class ComparisonResult(BaseModel):
     a_wins: int
     b_wins: int
     analysis_text: str
+
+    # ---------- Airport schema (Day 9 - Map View) ----------
+class AirportOut(BaseModel):
+    """One airport for the map view."""
+    iata_code: str
+    name: str
+    city: Optional[str] = None
+    latitude: float
+    longitude: float
+    is_operational: bool

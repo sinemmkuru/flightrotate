@@ -242,3 +242,30 @@ def compare_runs(req: ComparisonRequest, db: Session = Depends(get_db)):
         b_wins=b_wins,
         analysis_text=_analysis(a, b, metrics, winner),
     )
+
+    # ---------- Airports endpoint (Day 9 - Map View) ----------
+from api.schemas.optimization import AirportOut
+
+
+@router.get("/airports", response_model=list[AirportOut])
+def list_airports(db: Session = Depends(get_db)):
+    """All non-deleted airports for the map view."""
+    from persistence.models import Airport
+
+    airports = (
+        db.query(Airport)
+        .filter(Airport.deleted_at.is_(None))
+        .order_by(Airport.iata_code)
+        .all()
+    )
+    return [
+        AirportOut(
+            iata_code=a.iata_code,
+            name=a.name,
+            city=a.city,
+            latitude=a.latitude,
+            longitude=a.longitude,
+            is_operational=bool(a.is_operational),
+        )
+        for a in airports
+    ]
