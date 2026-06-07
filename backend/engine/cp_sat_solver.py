@@ -84,6 +84,7 @@ def run_cp_sat(
     solver.parameters.max_time_in_seconds = float(time_limit_seconds)
     solver.parameters.num_search_workers = 8
     status = solver.Solve(model)
+    status_name = solver.StatusName(status)
 
     # --- Reconstruct the solution dict ---
     solution = {fid: None for fid in flight_ids}
@@ -111,6 +112,12 @@ def run_cp_sat(
     # KPIs via the SAME evaluator the GA uses -> fair comparison.
     fitness = evaluate_solution(solution, flights_by_id, graph, weights)
     elapsed = time.perf_counter() - start
+
+    print(
+        f"[CP-SAT] flights={len(flight_ids)} status={status_name} "
+        f"coverage={fitness.coverage * 100:.1f}% elapsed={elapsed:.2f}s "
+        f"(time_limit={time_limit_seconds}s)"
+    )
 
     return CPSATResult(
         best_solution=solution,
