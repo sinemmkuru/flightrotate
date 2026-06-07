@@ -75,7 +75,7 @@ function Configure() {
         algorithm: "genetic",
         weights,
         parameters: params,
-        seed: 42,
+        seed: Math.floor(Math.random() * 1000000),
       });
       navigate("/dashboard");
     } catch (err) {

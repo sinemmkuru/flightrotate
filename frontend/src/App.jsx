@@ -11,6 +11,7 @@ import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Configure from "./pages/Configure";
 import Upload from "./pages/Upload";
+import Compare from "./pages/Compare";
 
 import "./App.css";
 
@@ -24,6 +25,7 @@ function App() {
           <Route path="/configure" element={<Configure />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/compare" element={<Compare />} />
         </Routes>
       </Layout>
     </BrowserRouter>

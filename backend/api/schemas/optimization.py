@@ -80,3 +80,50 @@ class AssignmentRow(BaseModel):
     turnaround_minutes: Optional[int]
     fuel_kg: float
     turnaround_warning: bool
+
+    # ---------- Comparison schemas (Day 8) ----------
+class ComparisonRequest(BaseModel):
+    """Body of POST /api/compare: the two run_ids to compare."""
+    run_a_id: str
+    run_b_id: str
+
+
+class ScenarioSummary(BaseModel):
+    """One side of the comparison. Mirrors a row of optimization_runs."""
+    run_id: str
+    created_at: str
+    algorithm: str
+    weight_idle: float
+    weight_fuel: float
+    weight_coverage: float
+    total_flights: int
+    assigned_flights: int
+    coverage_pct: float
+    idle_minutes: float
+    fuel_kg: float
+    fuel_cost_usd: float
+    solve_time_seconds: float
+    turnaround_warnings: int
+
+
+class MetricDelta(BaseModel):
+    """One row of the metrics table."""
+    name: str
+    key: str
+    value_a: float
+    value_b: float
+    delta_absolute: float
+    delta_percent: float
+    better: str            # "A" | "B" | "tie"
+    higher_is_better: bool
+    fmt: str               # "pct" | "min" | "kg" | "usd" | "sec" | "int"
+
+
+class ComparisonResult(BaseModel):
+    """Full payload for POST /api/compare."""
+    scenarios: dict[str, ScenarioSummary]   # {"a": ..., "b": ...}
+    metrics: list[MetricDelta]
+    winner: str            # "A" | "B" | "tie"
+    a_wins: int
+    b_wins: int
+    analysis_text: str

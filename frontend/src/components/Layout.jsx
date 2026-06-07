@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { path: "/dashboard", label: "Dashboard", icon: "📊" },
   { path: "/configure", label: "Configure", icon: "⚙️" },
   { path: "/upload", label: "Data Upload", icon: "📤" },
+  { path: "/compare", label: "Compare", icon: "⚖️" },
 ];
 
 function Layout({ children }) {

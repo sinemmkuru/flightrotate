@@ -32,6 +32,16 @@ export async function generateSample(body = { size: "medium" }) {
   return res.data;
 }
 
+// Compare two optimization runs.
+export async function compareRuns(runAId, runBId) {
+  const res = await client.post("/compare", {
+    run_a_id: runAId,
+    run_b_id: runBId,
+  });
+
+  return res.data;
+}
+
 // --- Analytics endpoints ---
 
 export async function listRuns() {

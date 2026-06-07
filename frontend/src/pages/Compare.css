@@ -1,0 +1,240 @@
+.compare {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.page-meta {
+  color: var(--text-secondary, #999);
+  font-size: 13px;
+}
+
+.card {
+  background: var(--bg-secondary, #161616);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 10px;
+  padding: 18px;
+}
+
+.picker-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 220px;
+}
+.picker label {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+.picker select {
+  background: var(--bg-primary, #0e0e0e);
+  color: var(--text-primary, #eee);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 9px 10px;
+  font-size: 13px;
+}
+
+.btn {
+  border: none;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn-primary {
+  background: #378add;
+  color: #fff;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error-banner {
+  border: 1px solid #c0392b;
+  color: #e07a6e;
+  background: rgba(192, 57, 43, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+.hint {
+  color: var(--text-secondary, #999);
+  font-size: 13px;
+}
+
+.scenarios-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.scenario-card {
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--bg-primary, #0e0e0e);
+}
+.scenario-winner {
+  border-color: #378add;
+  background: rgba(55, 138, 221, 0.07);
+}
+.scenario-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.scenario-name {
+  font-weight: 600;
+  color: var(--text-primary, #eee);
+}
+.scenario-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-a {
+  background: #888780;
+}
+.dot-b {
+  background: #378add;
+}
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: auto;
+}
+.badge-winner {
+  background: #378add;
+  color: #fff;
+}
+.badge-baseline {
+  background: #333;
+  color: #bbb;
+}
+.scenario-sub {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  margin-bottom: 10px;
+}
+.weight-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #222;
+  color: #ccc;
+  border: 1px solid var(--border, #2a2a2a);
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary, #eee);
+}
+
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.metrics-table th,
+.metrics-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+  text-align: left;
+}
+.metrics-table th {
+  color: var(--text-secondary, #999);
+  font-weight: 500;
+}
+.metrics-table td {
+  color: var(--text-primary, #eee);
+}
+.metrics-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.metrics-table .center {
+  text-align: center;
+}
+.delta-good {
+  color: #5fb878;
+}
+.delta-bad {
+  color: #e07a6e;
+}
+.delta-neutral {
+  color: var(--text-secondary, #999);
+}
+
+.pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 10px;
+}
+.pill-a {
+  background: #444;
+  color: #ddd;
+}
+.pill-b {
+  background: #378add;
+  color: #fff;
+}
+.pill-tie {
+  background: #2a2a2a;
+  color: #888;
+}
+
+.score-line {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-secondary, #bbb);
+}
+.radar-wrap {
+  width: 100%;
+}
+
+.analysis-box {
+  border: 1px solid #2e7d4f;
+  background: rgba(46, 125, 79, 0.08);
+  border-radius: 10px;
+  padding: 16px;
+}
+.analysis-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.analysis-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #5fb878;
+}
+.analysis-text {
+  font-size: 13px;
+  color: #9ed3ad;
+  line-height: 1.6;
+  margin: 0;
+}
