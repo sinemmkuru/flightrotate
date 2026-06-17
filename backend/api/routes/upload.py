@@ -10,10 +10,15 @@ For Phase 1 we expose two ingestion paths:
 The synthetic generator already exists in services/flight_generator.py;
 this endpoint just exposes it via HTTP.
 """
+import csv
+import io
+import math
+from datetime import datetime, date, timedelta
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
+
 
 from services.flight_generator import generate_flights
 from persistence.database import SessionLocal
@@ -77,3 +82,166 @@ def generate_sample(request: SampleRequest):
         aircraft_generated=result["aircraft_generated"],
         date=result["date"],
     )
+    import csv
+import io
+import math
+from datetime import datetime, date, timedelta
+
+REQUIRED_COLUMNS = ["flight_id", "origin", "destination", "dep_time", "arr_time"]
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    """Great-circle distance in km between two lat/lon points."""
+    R = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+@router.post("/upload/flights")
+async def upload_flights(file: UploadFile = File(...)):
+    """
+    Ingest a user-provided flight schedule (CSV).
+
+    Required columns: flight_id, origin, destination, dep_time, arr_time
+    (dep_time/arr_time are HH:MM). Replaces the current flight schedule;
+    the existing fleet and airports are kept. Distances are computed via
+    Haversine from the airports table. Returns structured errors/warnings.
+    """
+    # 1. File type
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are accepted.")
+
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")  # tolerate BOM
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.")
+
+    reader = csv.DictReader(io.StringIO(text))
+    headers = reader.fieldnames or []
+
+    # 2. Schema validation
+    missing = [c for c in REQUIRED_COLUMNS if c not in headers]
+    if missing:
+        return {
+            "ok": False,
+            "flights_imported": 0,
+            "errors": [{"type": "missing_columns", "columns": missing}],
+            "warnings": [],
+        }
+
+    db = SessionLocal()
+    try:
+        from persistence.models import (
+            Airport, Aircraft, Assignment, OptimizationRun,
+            FlightConnection, Flight,
+        )
+
+        airports = {
+            a.iata_code: (a.latitude, a.longitude)
+            for a in db.query(Airport).filter(Airport.deleted_at.is_(None)).all()
+        }
+        aircraft_count = (
+            db.query(Aircraft).filter(Aircraft.deleted_at.is_(None)).count()
+        )
+
+        rows = list(reader)
+        errors = []
+        warnings = []
+        seen_ids = {}
+        parsed = []
+
+        for i, row in enumerate(rows):
+            line = i + 2  # CSV header is line 1
+            fid = (row.get("flight_id") or "").strip()
+            origin = (row.get("origin") or "").strip().upper()
+            dest = (row.get("destination") or "").strip().upper()
+            dep_s = (row.get("dep_time") or "").strip()
+            arr_s = (row.get("arr_time") or "").strip()
+
+            if not fid:
+                errors.append({"type": "missing_value", "row": line, "column": "flight_id"})
+
+            dep_t = arr_t = None
+            try:
+                dep_t = datetime.strptime(dep_s, "%H:%M").time()
+            except ValueError:
+                errors.append({"type": "invalid_time_format", "row": line,
+                               "column": "dep_time", "value": dep_s})
+            try:
+                arr_t = datetime.strptime(arr_s, "%H:%M").time()
+            except ValueError:
+                errors.append({"type": "invalid_time_format", "row": line,
+                               "column": "arr_time", "value": arr_s})
+
+            if origin not in airports:
+                errors.append({"type": "unknown_airport", "row": line,
+                               "column": "origin", "value": origin})
+            if dest not in airports:
+                errors.append({"type": "unknown_airport", "row": line,
+                               "column": "destination", "value": dest})
+            if origin and dest and origin == dest:
+                errors.append({"type": "same_origin_destination", "row": line, "value": origin})
+
+            if fid:
+                seen_ids.setdefault(fid, []).append(line)
+
+            parsed.append((fid, origin, dest, dep_t, arr_t))
+
+        for fid, lines in seen_ids.items():
+            if len(lines) > 1:
+                warnings.append({"type": "duplicate_flight_id", "value": fid, "rows": lines})
+
+        if not rows:
+            errors.append({"type": "empty_file", "row": 0})
+
+        # If anything is wrong, ingest NOTHING.
+        if errors:
+            return {"ok": False, "flights_imported": 0, "errors": errors, "warnings": warnings}
+
+        # 3. Ingest. Clear flights + dependents (FK-safe), keep aircraft + airports.
+        db.query(Assignment).delete(synchronize_session=False)
+        db.query(OptimizationRun).delete(synchronize_session=False)
+        db.query(FlightConnection).delete(synchronize_session=False)
+        db.query(Flight).delete(synchronize_session=False)
+        db.commit()
+
+        base = date.today()
+        for (fid, origin, dest, dep_t, arr_t) in parsed:
+            dep_dt = datetime.combine(base, dep_t)
+            arr_dt = datetime.combine(base, arr_t)
+            if arr_dt <= dep_dt:
+                arr_dt += timedelta(days=1)  # overnight flight
+            lat1, lon1 = airports[origin]
+            lat2, lon2 = airports[dest]
+            dist = int(round(_haversine_km(lat1, lon1, lat2, lon2)))
+            db.add(Flight(
+                flight_id=fid,
+                flight_number=fid,        # CSV has no separate number; reuse id
+                origin=origin,
+                destination=dest,
+                scheduled_departure=dep_dt,
+                scheduled_arrival=arr_dt,
+                distance_km=dist,
+                status="scheduled",
+            ))
+        db.commit()
+
+        if aircraft_count == 0:
+            warnings.append({
+                "type": "no_aircraft",
+                "message": "No aircraft in the system. Generate a sample first to create a fleet, then optimize.",
+            })
+
+        return {
+            "ok": True,
+            "flights_imported": len(parsed),
+            "errors": [],
+            "warnings": warnings,
+            "aircraft_available": aircraft_count,
+        }
+    finally:
+        db.close()

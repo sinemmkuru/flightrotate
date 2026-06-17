@@ -66,3 +66,23 @@ export async function getAirports() {
 }
 
 export default client;
+
+// Upload a flight schedule CSV (multipart)
+// Upload a flight schedule CSV (multipart). Uses fetch to avoid the axios
+// instance's default application/json Content-Type clobbering the multipart boundary.
+export async function uploadFlights(file) {
+  const form = new FormData();
+  form.append("file", file);
+  const base = client.defaults.baseURL || "";
+  const res = await fetch(`${base}/upload/flights`, {
+    method: "POST",
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error("Upload failed");
+    err.response = { status: res.status, data };
+    throw err;
+  }
+  return data;
+}

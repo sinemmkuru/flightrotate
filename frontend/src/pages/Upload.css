@@ -172,3 +172,52 @@
   color: var(--text-secondary);
   margin-top: 4px;
 }
+.csv-required { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.csv-required-label { font-size: 12px; color: var(--text-secondary, #999); }
+.csv-chip {
+  font-family: monospace; font-size: 12px;
+  background: var(--bg-elevated, #1a1a1a); color: var(--text-primary, #ddd);
+  border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 3px 8px;
+}
+.csv-dropzone { cursor: pointer; transition: border-color .15s, background .15s; }
+.csv-dropzone-active { border-color: #378ADD !important; background: rgba(55,138,221,0.06); }
+
+.error-list {
+  margin-top: 14px; border: 1px solid #c0392b; background: rgba(192,57,43,0.08);
+  border-radius: 8px; padding: 12px 14px; font-size: 13px;
+}
+.error-list-title { color: #e07a6e; font-weight: 600; margin-bottom: 8px; }
+.error-list ul, .warning-list ul { margin: 0; padding-left: 18px; }
+.error-list li { color: #e0a59e; margin: 3px 0; }
+
+.warning-list {
+  margin-top: 14px; border: 1px solid #b8860b; background: rgba(184,134,11,0.08);
+  border-radius: 8px; padding: 12px 14px; font-size: 13px;
+}
+.warning-list-title { color: #e0b34d; font-weight: 600; margin-bottom: 8px; }
+.warning-list li { color: #d8c08a; margin: 3px 0; }
+
+.csv-required { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.csv-required-label { font-size: 12px; color: var(--text-secondary, #999); }
+.csv-chip {
+  font-family: monospace; font-size: 12px;
+  background: var(--bg-elevated, #1a1a1a); color: var(--text-primary, #ddd);
+  border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 3px 8px;
+}
+.csv-dropzone { cursor: pointer; transition: border-color .15s, background .15s; }
+.csv-dropzone-active { border-color: #378ADD !important; background: rgba(55,138,221,0.06); }
+
+.error-list {
+  margin-top: 14px; border: 1px solid #c0392b; background: rgba(192,57,43,0.08);
+  border-radius: 8px; padding: 12px 14px; font-size: 13px;
+}
+.error-list-title { color: #e07a6e; font-weight: 600; margin-bottom: 8px; }
+.error-list ul, .warning-list ul { margin: 0; padding-left: 18px; }
+.error-list li { color: #e0a59e; margin: 3px 0; }
+
+.warning-list {
+  margin-top: 14px; border: 1px solid #b8860b; background: rgba(184,134,11,0.08);
+  border-radius: 8px; padding: 12px 14px; font-size: 13px;
+}
+.warning-list-title { color: #e0b34d; font-weight: 600; margin-bottom: 8px; }
+.warning-list li { color: #d8c08a; margin: 3px 0; }

@@ -13,8 +13,7 @@
 */
 
 import { useEffect, useState } from "react";
-
-import { generateSample, listRuns } from "../api/client";
+import { generateSample, listRuns, uploadFlights } from "../api/client";
 import "./Upload.css";
 
 const SIZE_PRESETS = [
@@ -38,11 +37,49 @@ const SIZE_PRESETS = [
   },
 ];
 
+function formatUploadError(err) {
+  switch (err.type) {
+    case "missing_columns":
+      return `Missing required column(s): ${err.columns.join(", ")}`;
+    case "invalid_time_format":
+      return `Row ${err.row}: "${err.value}" in ${err.column} is not a valid HH:MM time.`;
+    case "unknown_airport":
+      return `Row ${err.row}: unknown airport "${err.value}" in ${err.column}.`;
+    case "same_origin_destination":
+      return `Row ${err.row}: origin and destination are the same ("${err.value}").`;
+    case "missing_value":
+      return `Row ${err.row}: missing ${err.column}.`;
+    case "empty_file":
+      return "The file has no data rows.";
+    case "not_csv":
+      return "Please select a .csv file.";
+    case "server_error":
+      return err.message || "Server error during upload.";
+    default:
+      return JSON.stringify(err);
+  }
+}
+
+function formatUploadWarning(w) {
+  switch (w.type) {
+    case "duplicate_flight_id":
+      return `Duplicate flight_id "${w.value}" on row(s) ${w.rows.join(", ")}.`;
+    case "no_aircraft":
+      return w.message;
+    default:
+      return JSON.stringify(w);
+  }
+}
+
 function Upload() {
   const [selectedSize, setSelectedSize] = useState("medium");
   const [generating, setGenerating] = useState(false);
   const [lastGenerated, setLastGenerated] = useState(null);
   const [error, setError] = useState(null);
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
 
   // Reuse the backend's run list as a "is there data?" indicator.
   // If there are runs, there must be flights+aircraft (one cannot run
@@ -82,6 +119,42 @@ function Upload() {
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function handleFile(file) {
+    if (!file) return;
+    setUploadResult(null);
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setUploadResult({ ok: false, flights_imported: 0, errors: [{ type: "not_csv" }], warnings: [] });
+      return;
+    }
+    setUploading(true);
+    try {
+      const res = await uploadFlights(file);
+      setUploadResult(res);
+    } catch (e) {
+      let detail = "Upload failed.";
+      const d = e?.response?.data?.detail;
+      if (typeof d === "string") {
+        detail = d;
+      } else if (Array.isArray(d) && d.length && d[0]?.msg) {
+        detail = d.map((x) => x.msg).join("; ");
+      }
+      setUploadResult({
+        ok: false,
+        flights_imported: 0,
+        errors: [{ type: "server_error", message: detail }],
+        warnings: [],
+      });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    handleFile(e.dataTransfer.files?.[0]);
   }
 
   return (
@@ -168,16 +241,74 @@ function Upload() {
       </section>
 
       {/* --- CSV upload (Phase 2 placeholder) --- */}
+      {/* --- CSV upload --- */}
       <section className="card csv-card">
         <h3>Upload CSV</h3>
         <p className="hint">
-          Upload your own flight schedule. Available in a future release.
+          Upload your own flight schedule. The existing fleet and airports are
+          kept; only the flight schedule is replaced.
         </p>
-        <div className="csv-dropzone">
-          <div className="csv-icon">📄</div>
-          <div className="csv-text">Drag & drop a CSV file here</div>
-          <div className="csv-subtext">Or browse — coming soon in Phase 2.</div>
+
+        <div className="csv-required">
+          <span className="csv-required-label">Required columns:</span>
+          {["flight_id", "origin", "destination", "dep_time", "arr_time"].map((c) => (
+            <span key={c} className="csv-chip">{c}</span>
+          ))}
         </div>
+
+        <label
+          className={"csv-dropzone" + (dragOver ? " csv-dropzone-active" : "")}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+        >
+          <input
+            type="file"
+            accept=".csv"
+            style={{ display: "none" }}
+            onChange={(e) => handleFile(e.target.files?.[0])}
+          />
+          <div className="csv-icon">📄</div>
+          <div className="csv-text">
+            {uploading ? "Uploading…" : "Drag & drop a CSV file here"}
+          </div>
+          <div className="csv-subtext">or click to browse</div>
+        </label>
+
+        {uploadResult && uploadResult.ok && (
+          <div className="success-banner">
+            Imported {uploadResult.flights_imported} flights.
+            {uploadResult.warnings?.length > 0 &&
+              ` ${uploadResult.warnings.length} warning(s) below.`}
+          </div>
+        )}
+
+        {uploadResult && !uploadResult.ok && uploadResult.errors?.length > 0 && (
+          <div className="error-list">
+            <div className="error-list-title">
+              {uploadResult.errors.length} error(s) — nothing was imported.
+            </div>
+            <ul>
+              {uploadResult.errors.slice(0, 20).map((err, i) => (
+                <li key={i}>{formatUploadError(err)}</li>
+              ))}
+            </ul>
+            {uploadResult.errors.length > 20 && (
+              <div className="hint small">…and {uploadResult.errors.length - 20} more.</div>
+            )}
+          </div>
+        )}
+
+        {uploadResult && uploadResult.warnings?.length > 0 && (
+          <div className="warning-list">
+            <div className="warning-list-title">Warnings</div>
+            <ul>
+              {uploadResult.warnings.map((w, i) => (
+                <li key={i}>{formatUploadWarning(w)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
     </div>
   );
