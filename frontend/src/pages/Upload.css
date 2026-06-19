@@ -172,52 +172,230 @@
   color: var(--text-secondary);
   margin-top: 4px;
 }
-.csv-required { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
-.csv-required-label { font-size: 12px; color: var(--text-secondary, #999); }
-.csv-chip {
-  font-family: monospace; font-size: 12px;
-  background: var(--bg-elevated, #1a1a1a); color: var(--text-primary, #ddd);
-  border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 3px 8px;
+.csv-required {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
 }
-.csv-dropzone { cursor: pointer; transition: border-color .15s, background .15s; }
-.csv-dropzone-active { border-color: #378ADD !important; background: rgba(55,138,221,0.06); }
+.csv-required-label {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+.csv-chip {
+  font-family: monospace;
+  font-size: 12px;
+  background: var(--bg-elevated, #1a1a1a);
+  color: var(--text-primary, #ddd);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.csv-dropzone {
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.csv-dropzone-active {
+  border-color: #378add !important;
+  background: rgba(55, 138, 221, 0.06);
+}
 
 .error-list {
-  margin-top: 14px; border: 1px solid #c0392b; background: rgba(192,57,43,0.08);
-  border-radius: 8px; padding: 12px 14px; font-size: 13px;
+  margin-top: 14px;
+  border: 1px solid #c0392b;
+  background: rgba(192, 57, 43, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
 }
-.error-list-title { color: #e07a6e; font-weight: 600; margin-bottom: 8px; }
-.error-list ul, .warning-list ul { margin: 0; padding-left: 18px; }
-.error-list li { color: #e0a59e; margin: 3px 0; }
+.error-list-title {
+  color: #e07a6e;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.error-list ul,
+.warning-list ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.error-list li {
+  color: #e0a59e;
+  margin: 3px 0;
+}
 
 .warning-list {
-  margin-top: 14px; border: 1px solid #b8860b; background: rgba(184,134,11,0.08);
-  border-radius: 8px; padding: 12px 14px; font-size: 13px;
+  margin-top: 14px;
+  border: 1px solid #b8860b;
+  background: rgba(184, 134, 11, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
 }
-.warning-list-title { color: #e0b34d; font-weight: 600; margin-bottom: 8px; }
-.warning-list li { color: #d8c08a; margin: 3px 0; }
+.warning-list-title {
+  color: #e0b34d;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.warning-list li {
+  color: #d8c08a;
+  margin: 3px 0;
+}
 
-.csv-required { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
-.csv-required-label { font-size: 12px; color: var(--text-secondary, #999); }
-.csv-chip {
-  font-family: monospace; font-size: 12px;
-  background: var(--bg-elevated, #1a1a1a); color: var(--text-primary, #ddd);
-  border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 3px 8px;
+.csv-required {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
 }
-.csv-dropzone { cursor: pointer; transition: border-color .15s, background .15s; }
-.csv-dropzone-active { border-color: #378ADD !important; background: rgba(55,138,221,0.06); }
+.csv-required-label {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+.csv-chip {
+  font-family: monospace;
+  font-size: 12px;
+  background: var(--bg-elevated, #1a1a1a);
+  color: var(--text-primary, #ddd);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.csv-dropzone {
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.csv-dropzone-active {
+  border-color: #378add !important;
+  background: rgba(55, 138, 221, 0.06);
+}
 
 .error-list {
-  margin-top: 14px; border: 1px solid #c0392b; background: rgba(192,57,43,0.08);
-  border-radius: 8px; padding: 12px 14px; font-size: 13px;
+  margin-top: 14px;
+  border: 1px solid #c0392b;
+  background: rgba(192, 57, 43, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
 }
-.error-list-title { color: #e07a6e; font-weight: 600; margin-bottom: 8px; }
-.error-list ul, .warning-list ul { margin: 0; padding-left: 18px; }
-.error-list li { color: #e0a59e; margin: 3px 0; }
+.error-list-title {
+  color: #e07a6e;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.error-list ul,
+.warning-list ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.error-list li {
+  color: #e0a59e;
+  margin: 3px 0;
+}
 
 .warning-list {
-  margin-top: 14px; border: 1px solid #b8860b; background: rgba(184,134,11,0.08);
-  border-radius: 8px; padding: 12px 14px; font-size: 13px;
+  margin-top: 14px;
+  border: 1px solid #b8860b;
+  background: rgba(184, 134, 11, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
 }
-.warning-list-title { color: #e0b34d; font-weight: 600; margin-bottom: 8px; }
-.warning-list li { color: #d8c08a; margin: 3px 0; }
+.warning-list-title {
+  color: #e0b34d;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.warning-list li {
+  color: #d8c08a;
+  margin: 3px 0;
+}
+
+/* --- Fixed dropzone (flex so the <label> renders a single solid border) --- */
+.csv-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 150px;
+  border: 2px dashed var(--border, #2a2a2a);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.csv-dropzone-active {
+  border-color: #378add;
+  background: rgba(55, 138, 221, 0.06);
+}
+.csv-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+.csv-text {
+  font-weight: 600;
+  color: var(--text-primary, #eee);
+}
+.csv-subtext {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+
+/* --- Two-card layout (Flight schedule + Aircraft fleet) --- */
+.upload-intro h3 {
+  margin-bottom: 4px;
+}
+.upload-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 20px;
+}
+.upload-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.upload-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.upload-card-head h3 {
+  margin: 0;
+}
+.upload-badge {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #e0b34d;
+  border: 1px solid #b8860b;
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.upload-card-done {
+  border-color: #2e8b57;
+}
+.upload-card-done .upload-badge {
+  color: #5fb878;
+  border-color: #2e8b57;
+}
+.upload-card-done .csv-dropzone {
+  border-color: #2e8b57;
+  background: rgba(46, 139, 87, 0.06);
+}
+.upload-card-error {
+  border-color: #c0392b;
+}
+.csv-chip-done {
+  border-color: #2e8b57 !important;
+  color: #9fd9b4 !important;
+}

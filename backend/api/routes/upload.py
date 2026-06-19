@@ -245,3 +245,108 @@ async def upload_flights(file: UploadFile = File(...)):
         }
     finally:
         db.close()
+
+@router.post("/upload/aircraft")
+async def upload_aircraft(file: UploadFile = File(...)):
+    """
+    Ingest a user-provided aircraft fleet (CSV).
+
+    Required columns: tail_number, base_airport, available_from, maintenance_due
+    (available_from is HH:MM; maintenance_due is YYYY-MM-DD, may be blank).
+    Replaces the current fleet; flights and airports are kept.
+    """
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are accepted.")
+
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.")
+
+    reader = csv.DictReader(io.StringIO(text))
+    headers = reader.fieldnames or []
+    required = ["tail_number", "base_airport", "available_from", "maintenance_due"]
+    missing = [c for c in required if c not in headers]
+    if missing:
+        return {"ok": False, "aircraft_imported": 0,
+                "errors": [{"type": "missing_columns", "columns": missing}], "warnings": []}
+
+    db = SessionLocal()
+    try:
+        from persistence.models import Airport, Aircraft, Assignment, OptimizationRun
+
+        airports = {
+            a.iata_code for a in db.query(Airport).filter(Airport.deleted_at.is_(None)).all()
+        }
+
+        rows = list(reader)
+        errors = []
+        warnings = []
+        seen = {}
+        parsed = []
+
+        for i, row in enumerate(rows):
+            line = i + 2
+            tail = (row.get("tail_number") or "").strip().upper()
+            base = (row.get("base_airport") or "").strip().upper()
+            avail_s = (row.get("available_from") or "").strip()
+            maint_s = (row.get("maintenance_due") or "").strip()
+
+            if not tail:
+                errors.append({"type": "missing_value", "row": line, "column": "tail_number"})
+            if base not in airports:
+                errors.append({"type": "unknown_airport", "row": line,
+                               "column": "base_airport", "value": base})
+
+            avail_t = None
+            if avail_s:
+                try:
+                    avail_t = datetime.strptime(avail_s, "%H:%M").time()
+                except ValueError:
+                    errors.append({"type": "invalid_time_format", "row": line,
+                                   "column": "available_from", "value": avail_s})
+            maint_d = None
+            if maint_s:
+                try:
+                    maint_d = datetime.strptime(maint_s, "%Y-%m-%d").date()
+                except ValueError:
+                    errors.append({"type": "invalid_date_format", "row": line,
+                                   "column": "maintenance_due", "value": maint_s})
+
+            if tail:
+                seen.setdefault(tail, []).append(line)
+            parsed.append((tail, base, avail_t, maint_d))
+
+        for tail, lines in seen.items():
+            if len(lines) > 1:
+                warnings.append({"type": "duplicate_tail_number", "value": tail, "rows": lines})
+
+        if not rows:
+            errors.append({"type": "empty_file", "row": 0})
+        if errors:
+            return {"ok": False, "aircraft_imported": 0, "errors": errors, "warnings": warnings}
+
+        # Clear fleet + dependents (FK-safe), keep flights + airports.
+        db.query(Assignment).delete(synchronize_session=False)
+        db.query(OptimizationRun).delete(synchronize_session=False)
+        db.query(Aircraft).delete(synchronize_session=False)
+        db.commit()
+
+        base_date = date.today()
+        for (tail, base, avail_t, maint_d) in parsed:
+            avail_dt = datetime.combine(base_date, avail_t or datetime.min.time())
+            db.add(Aircraft(
+                tail_number=tail,
+                aircraft_type="B737-800",
+                base_airport=base,
+                available_from=avail_dt,
+                maintenance_due=maint_d,
+                status="active",
+            ))
+        db.commit()
+
+        return {"ok": True, "aircraft_imported": len(parsed),
+                "errors": [], "warnings": warnings}
+    finally:
+        db.close()

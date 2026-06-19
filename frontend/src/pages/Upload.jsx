@@ -2,18 +2,25 @@
   Data Upload page.
 
   Two paths to populate the database:
-    1. Generate synthetic data (the main path for Phase 1) - calls
-       POST /api/sample with a chosen size preset. After success the
-       user is told how much data was created.
-    2. Upload a CSV (placeholder for Phase 2) - file picker is shown
-       but not wired up to the backend yet, with a clear note.
+    1. Generate synthetic data - calls POST /api/sample with a size preset.
+    2. Upload your own CSVs - two independent cards:
+         - Flight schedule  -> POST /api/upload/flights
+         - Aircraft fleet   -> POST /api/upload/aircraft
+       Airports are fixed master data (Turkish domestic); each upload
+       replaces only its own dataset and is validated row-by-row with
+       structured error/warning feedback.
 
-  We also show the current database state (flights + aircraft counts)
-  so the user knows whether there is anything to optimize.
+  We also show the current database state so the user knows whether
+  there is anything to optimize.
 */
 
 import { useEffect, useState } from "react";
-import { generateSample, listRuns, uploadFlights } from "../api/client";
+import {
+  generateSample,
+  listRuns,
+  uploadFlights,
+  uploadAircraft,
+} from "../api/client";
 import "./Upload.css";
 
 const SIZE_PRESETS = [
@@ -43,6 +50,8 @@ function formatUploadError(err) {
       return `Missing required column(s): ${err.columns.join(", ")}`;
     case "invalid_time_format":
       return `Row ${err.row}: "${err.value}" in ${err.column} is not a valid HH:MM time.`;
+    case "invalid_date_format":
+      return `Row ${err.row}: "${err.value}" in ${err.column} is not a valid YYYY-MM-DD date.`;
     case "unknown_airport":
       return `Row ${err.row}: unknown airport "${err.value}" in ${err.column}.`;
     case "same_origin_destination":
@@ -64,11 +73,112 @@ function formatUploadWarning(w) {
   switch (w.type) {
     case "duplicate_flight_id":
       return `Duplicate flight_id "${w.value}" on row(s) ${w.rows.join(", ")}.`;
+    case "duplicate_tail_number":
+      return `Duplicate tail_number "${w.value}" on row(s) ${w.rows.join(", ")}.`;
     case "no_aircraft":
       return w.message;
     default:
       return JSON.stringify(w);
   }
+}
+
+function UploadCard({ title, columns, kind, state, onFile }) {
+  const [dragOver, setDragOver] = useState(false);
+  const { uploading, result, file } = state;
+  const done = result?.ok;
+  const failed = result && !result.ok;
+  const count =
+    kind === "flights" ? result?.flights_imported : result?.aircraft_imported;
+  const unit = kind === "flights" ? "flights" : "aircraft";
+
+  const cardCls =
+    "card upload-card" +
+    (done ? " upload-card-done" : failed ? " upload-card-error" : "");
+
+  return (
+    <section className={cardCls}>
+      <div className="upload-card-head">
+        <h3>{title}</h3>
+        <span className="upload-badge">Required</span>
+      </div>
+
+      <label
+        className={"csv-dropzone" + (dragOver ? " csv-dropzone-active" : "")}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          onFile(e.dataTransfer.files?.[0]);
+        }}
+      >
+        <input
+          type="file"
+          accept=".csv"
+          style={{ display: "none" }}
+          onChange={(e) => onFile(e.target.files?.[0])}
+        />
+        <div className="csv-icon">{done ? "✅" : "📄"}</div>
+        {uploading ? (
+          <div className="csv-text">Uploading…</div>
+        ) : done ? (
+          <>
+            <div className="csv-text">{file?.name}</div>
+            <div className="csv-subtext">
+              {count} {unit} imported
+              {file ? ` · ${(file.size / 1024).toFixed(1)} KB` : ""} · click to
+              replace
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="csv-text">Drop CSV here or click to browse</div>
+            <div className="csv-subtext">Max 5 MB · .csv only</div>
+          </>
+        )}
+      </label>
+
+      <div className="csv-required">
+        <span className="csv-required-label">Required columns:</span>
+        {columns.map((c) => (
+          <span key={c} className={"csv-chip" + (done ? " csv-chip-done" : "")}>
+            {c}
+          </span>
+        ))}
+      </div>
+
+      {failed && result.errors?.length > 0 && (
+        <div className="error-list">
+          <div className="error-list-title">
+            {result.errors.length} error(s) — nothing imported.
+          </div>
+          <ul>
+            {result.errors.slice(0, 20).map((err, i) => (
+              <li key={i}>{formatUploadError(err)}</li>
+            ))}
+          </ul>
+          {result.errors.length > 20 && (
+            <div className="hint small">
+              …and {result.errors.length - 20} more.
+            </div>
+          )}
+        </div>
+      )}
+      {result?.warnings?.length > 0 && (
+        <div className="warning-list">
+          <div className="warning-list-title">Warnings</div>
+          <ul>
+            {result.warnings.map((w, i) => (
+              <li key={i}>{formatUploadWarning(w)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function Upload() {
@@ -77,13 +187,18 @@ function Upload() {
   const [lastGenerated, setLastGenerated] = useState(null);
   const [error, setError] = useState(null);
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [flightUpload, setFlightUpload] = useState({
+    uploading: false,
+    result: null,
+    file: null,
+  });
+  const [aircraftUpload, setAircraftUpload] = useState({
+    uploading: false,
+    result: null,
+    file: null,
+  });
 
   // Reuse the backend's run list as a "is there data?" indicator.
-  // If there are runs, there must be flights+aircraft (one cannot run
-  // an optimization without them).
   const [hasRuns, setHasRuns] = useState(null);
 
   useEffect(() => {
@@ -110,7 +225,6 @@ function Upload() {
         clear_existing: true,
       });
       setLastGenerated(result);
-      // Refresh the data indicator
       setHasRuns(false); // new data, no runs yet
     } catch (err) {
       console.error(err);
@@ -121,40 +235,40 @@ function Upload() {
     }
   }
 
-  async function handleFile(file) {
+  async function doUpload(kind, file) {
     if (!file) return;
-    setUploadResult(null);
+    const setState = kind === "flights" ? setFlightUpload : setAircraftUpload;
     if (!file.name.toLowerCase().endsWith(".csv")) {
-      setUploadResult({ ok: false, flights_imported: 0, errors: [{ type: "not_csv" }], warnings: [] });
+      setState({
+        uploading: false,
+        file,
+        result: { ok: false, errors: [{ type: "not_csv" }], warnings: [] },
+      });
       return;
     }
-    setUploading(true);
+    setState({ uploading: true, file, result: null });
     try {
-      const res = await uploadFlights(file);
-      setUploadResult(res);
+      const res =
+        kind === "flights"
+          ? await uploadFlights(file)
+          : await uploadAircraft(file);
+      setState({ uploading: false, file, result: res });
     } catch (e) {
       let detail = "Upload failed.";
       const d = e?.response?.data?.detail;
-      if (typeof d === "string") {
-        detail = d;
-      } else if (Array.isArray(d) && d.length && d[0]?.msg) {
+      if (typeof d === "string") detail = d;
+      else if (Array.isArray(d) && d.length && d[0]?.msg)
         detail = d.map((x) => x.msg).join("; ");
-      }
-      setUploadResult({
-        ok: false,
-        flights_imported: 0,
-        errors: [{ type: "server_error", message: detail }],
-        warnings: [],
+      setState({
+        uploading: false,
+        file,
+        result: {
+          ok: false,
+          errors: [{ type: "server_error", message: detail }],
+          warnings: [],
+        },
       });
-    } finally {
-      setUploading(false);
     }
-  }
-
-  function onDrop(e) {
-    e.preventDefault();
-    setDragOver(false);
-    handleFile(e.dataTransfer.files?.[0]);
   }
 
   return (
@@ -240,76 +354,41 @@ function Upload() {
         </p>
       </section>
 
-      {/* --- CSV upload (Phase 2 placeholder) --- */}
-      {/* --- CSV upload --- */}
-      <section className="card csv-card">
+      {/* --- CSV upload (Flight schedule + Aircraft fleet) --- */}
+      <div className="upload-intro">
         <h3>Upload CSV</h3>
         <p className="hint">
-          Upload your own flight schedule. The existing fleet and airports are
-          kept; only the flight schedule is replaced.
+          Upload your own data. Airports are fixed (Turkish domestic). Flights
+          and fleet are each replaced independently when you upload them.
         </p>
-
-        <div className="csv-required">
-          <span className="csv-required-label">Required columns:</span>
-          {["flight_id", "origin", "destination", "dep_time", "arr_time"].map((c) => (
-            <span key={c} className="csv-chip">{c}</span>
-          ))}
-        </div>
-
-        <label
-          className={"csv-dropzone" + (dragOver ? " csv-dropzone-active" : "")}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-        >
-          <input
-            type="file"
-            accept=".csv"
-            style={{ display: "none" }}
-            onChange={(e) => handleFile(e.target.files?.[0])}
-          />
-          <div className="csv-icon">📄</div>
-          <div className="csv-text">
-            {uploading ? "Uploading…" : "Drag & drop a CSV file here"}
-          </div>
-          <div className="csv-subtext">or click to browse</div>
-        </label>
-
-        {uploadResult && uploadResult.ok && (
-          <div className="success-banner">
-            Imported {uploadResult.flights_imported} flights.
-            {uploadResult.warnings?.length > 0 &&
-              ` ${uploadResult.warnings.length} warning(s) below.`}
-          </div>
-        )}
-
-        {uploadResult && !uploadResult.ok && uploadResult.errors?.length > 0 && (
-          <div className="error-list">
-            <div className="error-list-title">
-              {uploadResult.errors.length} error(s) — nothing was imported.
-            </div>
-            <ul>
-              {uploadResult.errors.slice(0, 20).map((err, i) => (
-                <li key={i}>{formatUploadError(err)}</li>
-              ))}
-            </ul>
-            {uploadResult.errors.length > 20 && (
-              <div className="hint small">…and {uploadResult.errors.length - 20} more.</div>
-            )}
-          </div>
-        )}
-
-        {uploadResult && uploadResult.warnings?.length > 0 && (
-          <div className="warning-list">
-            <div className="warning-list-title">Warnings</div>
-            <ul>
-              {uploadResult.warnings.map((w, i) => (
-                <li key={i}>{formatUploadWarning(w)}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
+      </div>
+      <div className="upload-cards">
+        <UploadCard
+          title="Flight schedule"
+          columns={[
+            "flight_id",
+            "origin",
+            "destination",
+            "dep_time",
+            "arr_time",
+          ]}
+          kind="flights"
+          state={flightUpload}
+          onFile={(f) => doUpload("flights", f)}
+        />
+        <UploadCard
+          title="Aircraft fleet"
+          columns={[
+            "tail_number",
+            "base_airport",
+            "available_from",
+            "maintenance_due",
+          ]}
+          kind="aircraft"
+          state={aircraftUpload}
+          onFile={(f) => doUpload("aircraft", f)}
+        />
+      </div>
     </div>
   );
 }

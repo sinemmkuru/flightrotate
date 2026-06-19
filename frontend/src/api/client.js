@@ -86,3 +86,20 @@ export async function uploadFlights(file) {
   }
   return data;
 }
+// Upload an aircraft fleet CSV (multipart). Same fetch approach as uploadFlights.
+export async function uploadAircraft(file) {
+  const form = new FormData();
+  form.append("file", file);
+  const base = client.defaults.baseURL || "";
+  const res = await fetch(`${base}/upload/aircraft`, {
+    method: "POST",
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error("Upload failed");
+    err.response = { status: res.status, data };
+    throw err;
+  }
+  return data;
+}
