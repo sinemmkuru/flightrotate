@@ -399,3 +399,82 @@
   border-color: #2e8b57 !important;
   color: #9fd9b4 !important;
 }
+/* --- Flight schedule preview + validation summary --- */
+.preview-card {
+  margin-top: 20px;
+}
+.preview-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.preview-head h3 {
+  margin: 0;
+}
+.preview-sub {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+.preview-valid {
+  margin-left: auto;
+  font-size: 13px;
+  color: #5fb878;
+  font-weight: 600;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.preview-table th,
+.preview-table td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+}
+.preview-table th {
+  color: var(--text-secondary, #999);
+  font-weight: 500;
+  font-family: monospace;
+}
+.preview-table td {
+  color: var(--text-primary, #eee);
+}
+.preview-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.validation-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border, #2a2a2a);
+}
+.vs-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #eee);
+  margin-right: 6px;
+}
+.vs-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #2a2a2a);
+}
+.vs-good {
+  color: #5fb878;
+  border-color: #2e8b57;
+}
+.vs-warn {
+  color: #e0b34d;
+  border-color: #b8860b;
+}
+.vs-pending {
+  color: var(--text-secondary, #999);
+}

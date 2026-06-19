@@ -181,6 +181,109 @@ function UploadCard({ title, columns, kind, state, onFile }) {
   );
 }
 
+// Preview + validation summary of a successfully uploaded flight schedule.
+// Parses the uploaded File client-side (display only); the authoritative
+// validation already happened on the backend.
+function FlightPreview({ file, flightsImported, fleetLoaded }) {
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [airports, setAirports] = useState(0);
+  const [overnight, setOvernight] = useState(0);
+
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    file.text().then((text) => {
+      if (cancelled) return;
+      const lines = text
+        .replace(/\r/g, "")
+        .split("\n")
+        .filter((l) => l.trim());
+      if (lines.length < 2) return;
+      const header = lines[0].split(",").map((h) => h.trim());
+      const idx = (name) => header.indexOf(name);
+      const get = (cols, name) => (cols[idx(name)] || "").trim();
+      const ap = new Set();
+      let onight = 0;
+      const parsed = lines.slice(1).map((line) => {
+        const cols = line.split(",");
+        const o = get(cols, "origin").toUpperCase();
+        const d = get(cols, "destination").toUpperCase();
+        const dep = get(cols, "dep_time");
+        const arr = get(cols, "arr_time");
+        if (o) ap.add(o);
+        if (d) ap.add(d);
+        if (arr && dep && arr < dep) onight += 1; // zero-padded HH:MM compares lexically
+        return {
+          flight_id: get(cols, "flight_id"),
+          origin: o,
+          destination: d,
+          dep_time: dep,
+          arr_time: arr,
+        };
+      });
+      setRows(parsed.slice(0, 5));
+      setTotal(parsed.length);
+      setAirports(ap.size);
+      setOvernight(onight);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+
+  if (!file || rows.length === 0) return null;
+
+  return (
+    <section className="card preview-card">
+      <div className="preview-head">
+        <h3>Flight schedule preview</h3>
+        <span className="preview-sub">
+          first {rows.length} of {total} rows
+        </span>
+        <span className="preview-valid">✓ All rows valid</span>
+      </div>
+
+      <table className="preview-table">
+        <thead>
+          <tr>
+            <th>flight_id</th>
+            <th>origin</th>
+            <th>destination</th>
+            <th>dep_time</th>
+            <th>arr_time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td>{r.flight_id}</td>
+              <td>{r.origin}</td>
+              <td>{r.destination}</td>
+              <td>{r.dep_time}</td>
+              <td>{r.arr_time}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="validation-summary">
+        <span className="vs-title">Data validation summary</span>
+        <span className="vs-chip vs-good">{flightsImported} valid flights</span>
+        <span className="vs-chip vs-good">{airports} unique airports</span>
+        {overnight > 0 && (
+          <span className="vs-chip vs-warn">
+            {overnight} overnight flight{overnight > 1 ? "s" : ""}
+          </span>
+        )}
+        <span className={"vs-chip " + (fleetLoaded ? "vs-good" : "vs-pending")}>
+          {fleetLoaded ? "Fleet loaded" : "Fleet pending"}
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function Upload() {
   const [selectedSize, setSelectedSize] = useState("medium");
   const [generating, setGenerating] = useState(false);
@@ -389,6 +492,14 @@ function Upload() {
           onFile={(f) => doUpload("aircraft", f)}
         />
       </div>
+
+      {flightUpload.result?.ok && (
+        <FlightPreview
+          file={flightUpload.file}
+          flightsImported={flightUpload.result.flights_imported}
+          fleetLoaded={!!aircraftUpload.result?.ok}
+        />
+      )}
     </div>
   );
 }
