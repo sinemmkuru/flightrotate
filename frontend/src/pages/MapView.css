@@ -3,21 +3,37 @@
   flex-direction: column;
   gap: 16px;
 }
-.page-head {
+
+/* --- Top bar --- */
+.map-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
 }
+.map-title {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.map-title h2 {
+  margin: 0;
+}
+.map-stats {
+  font-size: 13px;
+  color: var(--text-secondary, #999);
+}
+.map-warn {
+  color: #e0a955;
+}
+
 .map-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-.map-controls label {
-  font-size: 12px;
-  color: var(--text-secondary, #999);
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .map-controls select {
   background: var(--bg-primary, #0e0e0e);
@@ -29,14 +45,35 @@
   min-width: 240px;
 }
 
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.view-toggle button {
+  background: transparent;
+  color: var(--text-secondary, #999);
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.view-toggle .vt-on {
+  background: #378add;
+  color: #fff;
+}
+
+/* --- Map --- */
 .map-wrap {
+  position: relative;
   border: 1px solid var(--border, #2a2a2a);
   border-radius: 10px;
   overflow: hidden;
 }
 /* Leaflet REQUIRES an explicit height or the map won't render */
 .leaflet-root {
-  height: 70vh;
+  height: 68vh;
   width: 100%;
 }
 
@@ -49,6 +86,67 @@
   font-size: 13px;
 }
 
+/* --- Route detail panel (overlay top-right) --- */
+.route-detail {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  width: 240px;
+  background: rgba(18, 18, 20, 0.95);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 10px;
+  padding: 14px;
+  backdrop-filter: blur(4px);
+}
+.rd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rd-flight {
+  font-weight: 700;
+  color: var(--text-primary, #eee);
+  font-size: 15px;
+}
+.rd-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #999);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.rd-route {
+  font-size: 13px;
+  color: #378add;
+  margin: 4px 0 12px;
+  font-weight: 600;
+}
+.rd-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+.rd-grid span:nth-child(odd) {
+  color: var(--text-secondary, #999);
+}
+.rd-grid span:nth-child(even) {
+  color: var(--text-primary, #eee);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rd-warn {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #e0a955;
+  border-top: 1px solid var(--border, #2a2a2a);
+  padding-top: 8px;
+}
+
+/* --- Legend --- */
 .map-legend {
   display: flex;
   gap: 20px;
@@ -61,27 +159,103 @@
   align-items: center;
   gap: 6px;
 }
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.dot-op {
-  background: #5fb878;
-}
-.dot-non {
-  background: #555555;
-}
-.line {
+.lg-line {
   width: 18px;
   height: 3px;
   border-radius: 2px;
   display: inline-block;
 }
-.line-ok {
+.lg-in {
   background: #378add;
 }
-.line-warn {
+.lg-out {
+  background: #888780;
+  opacity: 0.5;
+}
+.lg-warn {
   background: #e0a955;
+}
+.lg-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.lg-op {
+  background: #5fb878;
+}
+.lg-non {
+  background: #555555;
+}
+
+/* --- Time range filter --- */
+.time-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tf-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tf-head h3 {
+  margin: 0;
+}
+.tf-showing {
+  font-size: 13px;
+  color: var(--text-secondary, #999);
+}
+
+.tf-hist {
+  width: 100%;
+  height: 48px;
+  display: block;
+}
+.tf-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  margin-top: -4px;
+}
+
+.tf-sliders {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+.tf-sliders label {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+.tf-sliders label strong {
+  color: var(--text-primary, #eee);
+  font-variant-numeric: tabular-nums;
+}
+.tf-sliders input[type="range"] {
+  width: 100%;
+  accent-color: #378add;
+}
+
+.tf-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tf-preset {
+  background: var(--bg-primary, #0e0e0e);
+  color: var(--text-secondary, #bbb);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tf-preset-on {
+  background: #378add;
+  color: #fff;
+  border-color: #378add;
 }
