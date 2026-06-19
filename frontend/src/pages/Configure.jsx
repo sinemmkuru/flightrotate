@@ -5,14 +5,19 @@
   Weight sliders auto-normalize: when one is changed, the other two are
   rescaled so the sum stays 1.0. The user never has to do arithmetic.
 
+  Before running, we check the database has both flights AND aircraft
+  (GET /api/status). If either is missing, the Run button is disabled and
+  a banner points the user to Data Upload. The backend also guards this,
+  so a stale page can't run on an empty dataset.
+
   Hitting "Run optimization" POSTs to /api/optimize and routes to
   /dashboard on success so the user sees the new run.
 */
 
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
 
-import { runOptimization } from "../api/client";
+import { runOptimization, getStatus } from "../api/client";
 import useAppStore from "../store/useAppStore";
 
 import "./Configure.css";
@@ -37,6 +42,23 @@ function Configure() {
     mutation_rate: 0.15,
   });
   const [error, setError] = useState(null);
+
+  // Data availability gate (B). null = unknown (loading or backend down);
+  // we only block when we positively know something is missing.
+  const [dataStatus, setDataStatus] = useState(null);
+
+  useEffect(() => {
+    getStatus()
+      .then(setDataStatus)
+      .catch(() => setDataStatus(null));
+  }, []);
+
+  const missing = [];
+  if (dataStatus) {
+    if (dataStatus.flights === 0) missing.push("flights");
+    if (dataStatus.aircraft === 0) missing.push("aircraft");
+  }
+  const noData = missing.length > 0;
 
   function handleWeightChange(key, newValue) {
     // Re-normalize so all three still sum to 1.0.
@@ -201,6 +223,20 @@ function Configure() {
         )}
       </section>
 
+      {/* --- Data gate (B) --- */}
+      {noData && (
+        <div className="error-banner">
+          No {missing.join(" or ")} loaded. Head to{" "}
+          <Link
+            to="/upload"
+            style={{ color: "#378ADD", textDecoration: "underline" }}
+          >
+            Data Upload
+          </Link>{" "}
+          to generate sample data or upload a CSV before optimizing.
+        </div>
+      )}
+
       {/* --- Error & Run --- */}
       {error && <div className="error-banner">{error}</div>}
 
@@ -208,7 +244,7 @@ function Configure() {
         <button
           className="btn btn-primary btn-large"
           onClick={handleRun}
-          disabled={isOptimizing}
+          disabled={isOptimizing || noData}
         >
           {isOptimizing ? "Running optimization..." : "Run optimization"}
         </button>

@@ -38,6 +38,23 @@ router = APIRouter()
 
 @router.post("/optimize", response_model=OptimizeResponse)
 def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
+    # Guard: don't run on an empty dataset (e.g. only a broken upload was attempted).
+    from persistence.models import Flight, Aircraft
+    flight_count = db.query(Flight).filter(Flight.deleted_at.is_(None)).count()
+    aircraft_count = db.query(Aircraft).filter(Aircraft.deleted_at.is_(None)).count()
+    if flight_count == 0 or aircraft_count == 0:
+        missing = []
+        if flight_count == 0:
+            missing.append("flights")
+        if aircraft_count == 0:
+            missing.append("aircraft")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot optimize: no {' or '.join(missing)} loaded. "
+                "Upload a valid CSV or generate sample data first."
+            ),
+        )
     """
     Runs an optimization and stores the result.
 

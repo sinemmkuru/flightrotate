@@ -103,3 +103,8 @@ export async function uploadAircraft(file) {
   }
   return data;
 }
+// Data availability counts (for gating the optimize button).
+export async function getStatus() {
+  const res = await client.get("/status");
+  return res.data; // { flights, aircraft, airports }
+}

@@ -269,3 +269,13 @@ def list_airports(db: Session = Depends(get_db)):
         )
         for a in airports
     ]
+
+    # ---------- Data status (for UI gating) ----------
+@router.get("/status")
+def data_status(db: Session = Depends(get_db)):
+    """Quick counts so the UI can tell whether there is data to optimize."""
+    from persistence.models import Flight, Aircraft, Airport
+    flights = db.query(Flight).filter(Flight.deleted_at.is_(None)).count()
+    aircraft = db.query(Aircraft).filter(Aircraft.deleted_at.is_(None)).count()
+    airports = db.query(Airport).filter(Airport.deleted_at.is_(None)).count()
+    return {"flights": flights, "aircraft": aircraft, "airports": airports}
