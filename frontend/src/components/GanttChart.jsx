@@ -3,7 +3,8 @@
 
   Each aircraft becomes one horizontal lane. Each assigned flight is a
   block on that lane, positioned by scheduled_departure → scheduled_arrival.
-  Hover shows a tooltip with route + times; click selects the flight.
+  Hover shows a tooltip with route + times; click opens the detail panel
+  (via the onSelectFlight callback).
 
   vis-timeline manages all the rendering, scrolling, and zoom interactions.
   We just hand it groups (aircraft) and items (flights) and re-create the
@@ -21,7 +22,7 @@ import { DataSet } from "vis-data/standalone";
 import "vis-timeline/styles/vis-timeline-graph2d.css";
 import "./GanttChart.css";
 
-function GanttChart({ assignments }) {
+function GanttChart({ assignments, onSelectFlight }) {
   const containerRef = useRef(null);
   const timelineRef = useRef(null);
 
@@ -107,6 +108,15 @@ function GanttChart({ assignments }) {
       options,
     );
 
+    // Open the flight detail panel when a flight block is clicked.
+    timelineRef.current.on("click", (props) => {
+      if (props.item == null) return;
+      const a = assignments.find(
+        (x) => `${x.tail_number}-${x.sequence_order}` === props.item,
+      );
+      if (a && onSelectFlight) onSelectFlight(a);
+    });
+
     // Cleanup on unmount
     return () => {
       if (timelineRef.current) {
@@ -114,7 +124,7 @@ function GanttChart({ assignments }) {
         timelineRef.current = null;
       }
     };
-  }, [assignments]);
+  }, [assignments, onSelectFlight]);
 
   return <div ref={containerRef} className="gantt-container" />;
 }

@@ -6,6 +6,9 @@
 
   The "Run optimization" button calls POST /api/optimize with default
   weights, then refreshes the view to display the new run.
+
+  Clicking a flight block in the Gantt opens a slide-in Flight Detail Panel
+  with rotation context (preceding/following leg) and a "Why?" explanation.
 */
 
 import { useEffect, useState } from "react";
@@ -14,6 +17,7 @@ import { listRuns, runOptimization, getAssignments } from "../api/client";
 import useAppStore from "../store/useAppStore";
 import KpiCard from "../components/KpiCard";
 import GanttChart from "../components/GanttChart";
+import FlightDetailPanel from "../components/FlightDetailPanel";
 
 import "./Dashboard.css";
 
@@ -25,6 +29,7 @@ function Dashboard() {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedFlight, setSelectedFlight] = useState(null);
 
   // On mount: load runs, pick the newest, fetch its assignments
   useEffect(() => {
@@ -34,6 +39,7 @@ function Dashboard() {
   async function loadLatestRun() {
     setLoading(true);
     setError(null);
+    setSelectedFlight(null);
     try {
       const runs = await listRuns();
       if (runs.length === 0) {
@@ -158,7 +164,13 @@ function Dashboard() {
 
           <section className="gantt-section">
             <h3>Aircraft Rotations</h3>
-            <GanttChart assignments={assignments} />
+            <p className="hint small">
+              Click a flight block for full details and rotation context.
+            </p>
+            <GanttChart
+              assignments={assignments}
+              onSelectFlight={setSelectedFlight}
+            />
           </section>
 
           <section className="assignment-section">
@@ -183,6 +195,8 @@ function Dashboard() {
                     <tr
                       key={`${a.tail_number}-${a.sequence_order}`}
                       className={a.turnaround_warning ? "row-warning" : ""}
+                      onClick={() => setSelectedFlight(a)}
+                      style={{ cursor: "pointer" }}
                     >
                       <td>{a.tail_number}</td>
                       <td>{a.sequence_order + 1}</td>
@@ -207,6 +221,12 @@ function Dashboard() {
           </section>
         </>
       )}
+
+      <FlightDetailPanel
+        flight={selectedFlight}
+        assignments={assignments}
+        onClose={() => setSelectedFlight(null)}
+      />
     </div>
   );
 }

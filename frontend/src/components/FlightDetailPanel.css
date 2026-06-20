@@ -1,0 +1,144 @@
+.fdp {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 360px;
+  max-width: 90vw;
+  background: rgba(16, 16, 18, 0.98);
+  border-left: 1px solid var(--border, #2a2a2a);
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.45);
+  z-index: 1200;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fdp-in 0.2s ease;
+}
+@keyframes fdp-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.fdp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.fdp-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fdp-flight {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary, #eee);
+}
+.fdp-badge {
+  align-self: flex-start;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+.fdp-badge-ok {
+  color: #5fb878;
+  border: 1px solid #2e8b57;
+}
+.fdp-badge-warn {
+  color: #e0a955;
+  border: 1px solid #b8860b;
+}
+.fdp-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #999);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.fdp-route {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+}
+.fdp-ap {
+  display: flex;
+  flex-direction: column;
+}
+.fdp-ap-right {
+  text-align: right;
+}
+.fdp-code {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary, #eee);
+}
+.fdp-time {
+  font-size: 13px;
+  color: var(--text-secondary, #999);
+}
+.fdp-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+.fdp-dur {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+.fdp-arrow {
+  color: #378add;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.fdp-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 12px;
+  font-size: 13px;
+}
+.fdp-grid span:nth-child(odd) {
+  color: var(--text-secondary, #999);
+}
+.fdp-grid span:nth-child(even) {
+  color: var(--text-primary, #eee);
+  text-align: right;
+}
+.fdp-warn-text {
+  color: #e0a955 !important;
+}
+
+.fdp-why-btn {
+  align-self: flex-start;
+  background: #378add;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.fdp-why-btn:hover {
+  background: #2f7bc7;
+}
+.fdp-why {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary, #bbb);
+  background: rgba(55, 138, 221, 0.06);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 8px;
+  padding: 12px;
+}
