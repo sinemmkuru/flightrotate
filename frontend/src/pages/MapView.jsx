@@ -1,31 +1,33 @@
 /*
   Map View - route map of an optimization run over Turkey.
 
-  Tier 1 enhancements (all backed by real schedule/assignment data):
-    - Time range filter (presets + adjustable start/end) that filters routes
-      by scheduled departure. Routes outside the window are dimmed.
-    - Hourly departure histogram (in-window hours highlighted).
-    - Route hierarchy: in-window (solid blue), outside-window (dashed grey),
-      turnaround warning (orange).
-    - Airport markers sized by traffic (movement count).
-    - Click a route to see its real details (flight, route, times, distance,
-      tail, turnaround).
-    - Status stats: aircraft active in window / routes in window / total.
+  Tier 1 (real schedule/assignment data):
+    - Time range filter (presets + adjustable start/end), routes outside the
+      window are dimmed.
+    - Hourly departure histogram.
+    - Route hierarchy: in-window (blue) / outside (dashed grey) / warning (orange).
+    - Airport markers sized by traffic; route click -> detail panel; stats; legend.
     - Map / Satellite tile toggle.
 
-  This visualizes the OPTIMIZED SCHEDULE (a "snapshot"); it is not live
-  telemetry. Simulated aircraft positions + playback are a separate,
-  clearly-labelled follow-up.
+  Tier 2 (SIMULATED, schedule-derived - NOT live telemetry):
+    - A playback cursor sweeps the selected window. Aircraft airborne at the
+      cursor time are drawn as plane icons, their position interpolated along
+      the great-circle by flight progress and rotated to the bearing.
+    - Derived ground speed (distance / duration) and an assumed cruise level
+      are shown, clearly labelled as simulated. ETA = scheduled arrival.
+    - Play / pause + speed (1x..60x). At 60x a full day plays in ~24s.
 */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
   CircleMarker,
   Polyline,
+  Marker,
   Tooltip as LTooltip,
 } from "react-leaflet";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getAirports, listRuns, getAssignments } from "../api/client";
 import "./MapView.css";
@@ -53,8 +55,8 @@ const PRESETS = [
   { key: "fullday", label: "Full day", start: 0, end: 1440 },
 ];
 
-// "2026-06-19T06:00:00" -> 360 (minutes of day). Parses the HH:MM after 'T'
-// directly to avoid any timezone surprises.
+const SPEEDS = [1, 5, 10, 30, 60];
+
 function minsOfDay(iso) {
   if (!iso) return null;
   const t = iso.split("T")[1] || "";
@@ -63,16 +65,34 @@ function minsOfDay(iso) {
   if (Number.isNaN(hh)) return null;
   return hh * 60 + (Number.isNaN(mm) ? 0 : mm);
 }
-
 function hhmm(iso) {
   if (!iso) return "";
   return (iso.split("T")[1] || "").slice(0, 5);
 }
-
 function fmtMin(mins) {
-  const h = Math.floor(mins / 60) % 24;
-  const m = mins % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const m = ((Math.round(mins) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+function bearing(lat1, lon1, lat2, lon2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const toDeg = (r) => (r * 180) / Math.PI;
+  const f1 = toRad(lat1),
+    f2 = toRad(lat2),
+    dl = toRad(lon2 - lon1);
+  const y = Math.sin(dl) * Math.cos(f2);
+  const x =
+    Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+function planeIcon(heading, color) {
+  return L.divIcon({
+    className: "plane-marker",
+    html: `<svg width="22" height="22" viewBox="0 0 22 22" style="transform: rotate(${heading}deg);">
+      <path d="M11 2 L5.5 18 L11 14.5 L16.5 18 Z" fill="${color}" stroke="#0b0b0b" stroke-width="1"/>
+    </svg>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
 }
 
 function MapView() {
@@ -87,6 +107,13 @@ function MapView() {
   const [activePreset, setActivePreset] = useState("fullday");
   const [selectedKey, setSelectedKey] = useState(null);
   const [view, setView] = useState("map");
+
+  // Tier 2 playback
+  const [cursor, setCursor] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(10);
+  const winRef = useRef({ start: 0, end: 1440 });
+  winRef.current = { start: winStart, end: winEnd };
 
   useEffect(() => {
     init();
@@ -130,16 +157,43 @@ function MapView() {
     setActivePreset(p.key);
     setWinStart(p.start);
     setWinEnd(p.end);
+    setCursor((c) => Math.min(Math.max(c, p.start), p.end));
   }
-
   function setStart(v) {
+    const nv = Math.min(v, winEnd);
     setActivePreset(null);
-    setWinStart(Math.min(v, winEnd));
+    setWinStart(nv);
+    setCursor((c) => Math.max(c, nv));
   }
   function setEnd(v) {
+    const nv = Math.max(v, winStart);
     setActivePreset(null);
-    setWinEnd(Math.max(v, winStart));
+    setWinEnd(nv);
+    setCursor((c) => Math.min(c, nv));
   }
+
+  function togglePlay() {
+    setCursor((c) => (c >= winEnd ? winStart : c));
+    setPlaying((p) => !p);
+  }
+  function resetPlay() {
+    setPlaying(false);
+    setCursor(winStart);
+  }
+
+  // Playback loop: advance `speed` simulated-minutes per real second.
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => {
+      setCursor((c) => {
+        const { start, end } = winRef.current;
+        let n = c + speed * 0.1; // tick = 100ms
+        if (n > end) n = start;
+        return n;
+      });
+    }, 100);
+    return () => clearInterval(id);
+  }, [playing, speed]);
 
   const airportMap = useMemo(() => {
     const m = {};
@@ -153,13 +207,19 @@ function MapView() {
         const o = airportMap[a.origin];
         const d = airportMap[a.destination];
         if (!o || !d) return null;
+        const depMin = minsOfDay(a.scheduled_departure);
+        let arrMin = minsOfDay(a.scheduled_arrival);
+        if (arrMin != null && depMin != null && arrMin < depMin) arrMin += 1440;
         return {
           key: a.flight_id,
+          o: [o.latitude, o.longitude],
+          d: [d.latitude, d.longitude],
           positions: [
             [o.latitude, o.longitude],
             [d.latitude, d.longitude],
           ],
-          depMin: minsOfDay(a.scheduled_departure),
+          depMin,
+          arrMin,
           warning: !!a.turnaround_warning,
           flight_number: a.flight_number,
           origin: a.origin,
@@ -191,7 +251,6 @@ function MapView() {
     return t;
   }, [assignments]);
 
-  // Hourly departure histogram.
   const hist = useMemo(() => {
     const b = Array(24).fill(0);
     for (const r of routes)
@@ -200,7 +259,52 @@ function MapView() {
   }, [routes]);
   const histMax = Math.max(1, ...hist);
 
+  // Aircraft airborne at the cursor time (simulated positions).
+  const airborne = useMemo(() => {
+    const out = [];
+    for (const r of routes) {
+      if (r.depMin == null || r.arrMin == null) continue;
+      if (cursor < r.depMin || cursor > r.arrMin) continue;
+      const span = r.arrMin - r.depMin || 1;
+      const p = Math.min(1, Math.max(0, (cursor - r.depMin) / span));
+      const lat = r.o[0] + (r.d[0] - r.o[0]) * p;
+      const lon = r.o[1] + (r.d[1] - r.o[1]) * p;
+      out.push({
+        key: r.key,
+        lat,
+        lon,
+        heading: bearing(r.o[0], r.o[1], r.d[0], r.d[1]),
+        color: r.warning ? "#e0a955" : "#f0c674",
+        progress: Math.round(p * 100),
+        flight_number: r.flight_number,
+        tail: r.tail,
+        route: `${r.origin} → ${r.destination}`,
+      });
+    }
+    return out;
+  }, [routes, cursor]);
+
   const selected = routes.find((r) => r.key === selectedKey) || null;
+  const selAir =
+    selected &&
+    selected.depMin != null &&
+    selected.arrMin != null &&
+    cursor >= selected.depMin &&
+    cursor <= selected.arrMin
+      ? {
+          progress: Math.round(
+            ((cursor - selected.depMin) /
+              (selected.arrMin - selected.depMin || 1)) *
+              100,
+          ),
+          speedKts: Math.round(
+            selected.distance /
+              ((selected.arrMin - selected.depMin) / 60 || 1) /
+              1.852,
+          ),
+        }
+      : null;
+
   const tile = TILES[view];
 
   return (
@@ -261,7 +365,6 @@ function MapView() {
             subdomains={tile.subdomains}
           />
 
-          {/* Outside-window routes first (drawn underneath, dimmed). */}
           {outWinRoutes.map((r) => (
             <Polyline
               key={"out-" + r.key}
@@ -275,7 +378,6 @@ function MapView() {
             />
           ))}
 
-          {/* In-window routes. */}
           {inWinRoutes.map((r) => (
             <Polyline
               key={"in-" + r.key}
@@ -293,7 +395,6 @@ function MapView() {
             </Polyline>
           ))}
 
-          {/* Airports, sized by traffic. */}
           {airports.map((a) => {
             const count = traffic[a.iata_code] || 0;
             const radius = count > 0 ? Math.sqrt(count) * 3 + 4 : 3;
@@ -317,9 +418,22 @@ function MapView() {
               </CircleMarker>
             );
           })}
+
+          {/* Simulated airborne aircraft at cursor time */}
+          {airborne.map((p) => (
+            <Marker
+              key={"plane-" + p.key}
+              position={[p.lat, p.lon]}
+              icon={planeIcon(p.heading, p.color)}
+              eventHandlers={{ click: () => setSelectedKey(p.key) }}
+            >
+              <LTooltip>
+                {p.tail} · {p.flight_number} · {p.route} · {p.progress}% (sim)
+              </LTooltip>
+            </Marker>
+          ))}
         </MapContainer>
 
-        {/* Route detail panel (real data). */}
         {selected && (
           <div className="route-detail">
             <div className="rd-head">
@@ -347,6 +461,25 @@ function MapView() {
                   : "— (first leg)"}
               </span>
             </div>
+            {selAir && (
+              <div className="rd-sim">
+                <div className="rd-sim-title">
+                  Simulated position @ {fmtMin(cursor)}
+                </div>
+                <div className="rd-grid">
+                  <span>Status</span>
+                  <span>In flight</span>
+                  <span>Progress</span>
+                  <span>{selAir.progress}%</span>
+                  <span>ETA</span>
+                  <span>{selected.arr}</span>
+                  <span>Ground speed</span>
+                  <span>~{selAir.speedKts} kts</span>
+                  <span>Altitude</span>
+                  <span>FL360 (assumed)</span>
+                </div>
+              </div>
+            )}
             {selected.warning && (
               <div className="rd-warn">⚠ Tight turnaround</div>
             )}
@@ -354,7 +487,6 @@ function MapView() {
         )}
       </div>
 
-      {/* Legend */}
       <div className="map-legend">
         <span>
           <span className="lg-line lg-in" /> In window ({inWinRoutes.length})
@@ -370,11 +502,10 @@ function MapView() {
           <span className="lg-dot lg-op" /> Operational airport
         </span>
         <span>
-          <span className="lg-dot lg-non" /> Other airport
+          <span className="lg-plane" /> Airborne now ({airborne.length})
         </span>
       </div>
 
-      {/* Time range filter */}
       <section className="card time-filter">
         <div className="tf-head">
           <h3>Time range filter</h3>
@@ -384,7 +515,6 @@ function MapView() {
           </span>
         </div>
 
-        {/* Hourly histogram */}
         <svg
           className="tf-hist"
           viewBox="0 0 240 48"
@@ -405,6 +535,15 @@ function MapView() {
               />
             );
           })}
+          {/* playback cursor */}
+          <line
+            x1={(cursor / 1440) * 240}
+            y1={2}
+            x2={(cursor / 1440) * 240}
+            y2={46}
+            stroke="#f0c674"
+            strokeWidth={1.2}
+          />
         </svg>
         <div className="tf-axis">
           <span>00:00</span>
@@ -414,7 +553,6 @@ function MapView() {
           <span>24:00</span>
         </div>
 
-        {/* Adjustable start / end */}
         <div className="tf-sliders">
           <label>
             Start <strong>{fmtMin(winStart)}</strong>
@@ -440,7 +578,6 @@ function MapView() {
           />
         </div>
 
-        {/* Presets */}
         <div className="tf-presets">
           {PRESETS.map((p) => (
             <button
@@ -453,6 +590,33 @@ function MapView() {
               {p.label}
             </button>
           ))}
+        </div>
+
+        {/* Playback (simulated) */}
+        <div className="tf-playback">
+          <button className="tf-play-btn" onClick={togglePlay}>
+            {playing ? "⏸ Pause" : "▶ Play"}
+          </button>
+          <button className="tf-play-btn" onClick={resetPlay}>
+            ⏮ Reset
+          </button>
+          <span className="tf-cursor-time">{fmtMin(cursor)}</span>
+          <label className="tf-speed">
+            Speed
+            <select
+              value={speed}
+              onChange={(e) => setSpeed(parseInt(e.target.value, 10))}
+            >
+              {SPEEDS.map((s) => (
+                <option key={s} value={s}>
+                  {s}×
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="tf-sim-note">
+            Simulated positions · not live telemetry
+          </span>
         </div>
       </section>
     </div>

@@ -259,3 +259,76 @@
   color: #fff;
   border-color: #378add;
 }
+/* --- Tier 2: simulated aircraft + playback --- */
+.plane-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.lg-plane {
+  width: 0;
+  height: 0;
+  display: inline-block;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 11px solid #f0c674;
+}
+
+.rd-sim {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border, #2a2a2a);
+}
+.rd-sim-title {
+  font-size: 11px;
+  color: #f0c674;
+  margin-bottom: 6px;
+}
+
+.tf-playback {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border, #2a2a2a);
+  padding-top: 12px;
+}
+.tf-play-btn {
+  background: var(--bg-primary, #0e0e0e);
+  color: var(--text-primary, #eee);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tf-play-btn:hover {
+  border-color: #378add;
+}
+.tf-cursor-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #f0c674;
+  font-size: 14px;
+  min-width: 52px;
+}
+.tf-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary, #999);
+}
+.tf-speed select {
+  background: var(--bg-primary, #0e0e0e);
+  color: var(--text-primary, #eee);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.tf-sim-note {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+  font-style: italic;
+}
