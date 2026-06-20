@@ -279,3 +279,31 @@ def data_status(db: Session = Depends(get_db)):
     aircraft = db.query(Aircraft).filter(Aircraft.deleted_at.is_(None)).count()
     airports = db.query(Airport).filter(Airport.deleted_at.is_(None)).count()
     return {"flights": flights, "aircraft": aircraft, "airports": airports}
+
+    # ---------- Naive baseline (Day 11) ----------
+@router.get("/baseline")
+def get_baseline(db: Session = Depends(get_db)):
+    """
+    KPIs for a deterministic naive greedy baseline on the CURRENT data, so the
+    dashboard can show "% improvement vs naive". Same evaluate_solution +
+    fuel_cost_usd as the optimizer -> deltas are apples-to-apples.
+    """
+    from persistence.models import Flight, Aircraft
+    from engine.baseline import compute_baseline_kpis
+
+    flights = (
+        db.query(Flight)
+        .filter(Flight.status == "scheduled", Flight.deleted_at == None)  # noqa: E711
+        .all()
+    )
+    aircraft_list = (
+        db.query(Aircraft)
+        .filter(Aircraft.status == "active", Aircraft.deleted_at == None)  # noqa: E711
+        .all()
+    )
+    if not flights or not aircraft_list:
+        return {"available": False, "reason": "no flights or aircraft loaded"}
+
+    kpis = compute_baseline_kpis(flights, aircraft_list)
+    kpis["available"] = True
+    return kpis

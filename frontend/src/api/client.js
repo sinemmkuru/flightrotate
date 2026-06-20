@@ -108,3 +108,9 @@ export async function getStatus() {
   const res = await client.get("/status");
   return res.data; // { flights, aircraft, airports }
 }
+
+// Naive greedy baseline KPIs for the current data ("% vs naive" deltas).
+export async function getBaseline() {
+  const { data } = await client.get("/baseline");
+  return data;
+}

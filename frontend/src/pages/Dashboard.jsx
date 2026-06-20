@@ -7,13 +7,25 @@
   The "Run optimization" button calls POST /api/optimize with default
   weights, then refreshes the view to display the new run.
 
+  Below the KPI cards we show an "Optimizer vs naive baseline" strip: a
+  deterministic greedy first-come-first-served assignment is computed on
+  the same data (GET /api/baseline) and the optimizer's gains are shown.
+  Coverage is compared directly (percentage points); idle and fuel are
+  compared PER ASSIGNED FLIGHT so the efficiency gain is fair even when
+  the two solutions cover a different number of flights.
+
   Clicking a flight block in the Gantt opens a slide-in Flight Detail Panel
   with rotation context (preceding/following leg) and a "Why?" explanation.
 */
 
 import { useEffect, useState } from "react";
 
-import { listRuns, runOptimization, getAssignments } from "../api/client";
+import {
+  listRuns,
+  runOptimization,
+  getAssignments,
+  getBaseline,
+} from "../api/client";
 import useAppStore from "../store/useAppStore";
 import KpiCard from "../components/KpiCard";
 import GanttChart from "../components/GanttChart";
@@ -27,11 +39,12 @@ function Dashboard() {
 
   const [run, setRun] = useState(null);
   const [assignments, setAssignments] = useState([]);
+  const [baseline, setBaseline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedFlight, setSelectedFlight] = useState(null);
 
-  // On mount: load runs, pick the newest, fetch its assignments
+  // On mount: load runs, pick the newest, fetch its assignments + baseline
   useEffect(() => {
     loadLatestRun();
   }, []);
@@ -45,6 +58,7 @@ function Dashboard() {
       if (runs.length === 0) {
         setRun(null);
         setAssignments([]);
+        setBaseline(null);
         setCurrentRunId(null);
       } else {
         const latest = runs[0]; // backend returns newest-first
@@ -52,6 +66,14 @@ function Dashboard() {
         setCurrentRunId(latest.run_id);
         const rows = await getAssignments(latest.run_id);
         setAssignments(rows);
+        // Baseline is independent of the run; never let it break the dashboard.
+        try {
+          const bl = await getBaseline();
+          setBaseline(bl);
+        } catch (blErr) {
+          console.error("baseline fetch failed", blErr);
+          setBaseline(null);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -97,6 +119,10 @@ function Dashboard() {
       </div>
     );
   }
+
+  // Compute baseline deltas (only when we have both a run and a baseline).
+  const bl =
+    run && baseline?.available ? buildBaselineDeltas(run, baseline) : null;
 
   return (
     <div className="dashboard">
@@ -161,6 +187,42 @@ function Dashboard() {
               accent="blue"
             />
           </section>
+
+          {bl && (
+            <section className="baseline-strip">
+              <div className="baseline-head">
+                <span className="baseline-title">
+                  Optimizer vs naive baseline
+                </span>
+                <span className="baseline-sub">
+                  Naive = greedy first-come-first-served chaining · covers{" "}
+                  {baseline.assigned_flights}/{baseline.total_flights} (
+                  {bl.baseCovPP.toFixed(1)}%) · idle &amp; fuel compared per
+                  flight
+                </span>
+              </div>
+              <div className="baseline-metrics">
+                <BaselineMetric
+                  label="Coverage"
+                  text={`${bl.covDeltaPP > 0 ? "+" : ""}${bl.covDeltaPP.toFixed(1)} pp`}
+                  good={bl.covDeltaPP > 0.05}
+                  bad={bl.covDeltaPP < -0.05}
+                />
+                <BaselineMetric
+                  label="Idle / flight"
+                  text={`${bl.idleDeltaPct > 0 ? "+" : ""}${bl.idleDeltaPct.toFixed(0)}%`}
+                  good={bl.idleDeltaPct < -0.5}
+                  bad={bl.idleDeltaPct > 0.5}
+                />
+                <BaselineMetric
+                  label="Fuel / flight"
+                  text={`${bl.fuelDeltaPct > 0 ? "+" : ""}${bl.fuelDeltaPct.toFixed(0)}%`}
+                  good={bl.fuelDeltaPct < -0.5}
+                  bad={bl.fuelDeltaPct > 0.5}
+                />
+              </div>
+            </section>
+          )}
 
           <section className="gantt-section">
             <h3>Aircraft Rotations</h3>
@@ -227,6 +289,53 @@ function Dashboard() {
         assignments={assignments}
         onClose={() => setSelectedFlight(null)}
       />
+    </div>
+  );
+}
+
+// --- Baseline comparison helpers ---
+
+function perFlight(total, assigned) {
+  return assigned > 0 ? total / assigned : 0;
+}
+
+/*
+  Coverage is compared directly as a percentage-point gap. Idle and fuel are
+  normalized PER ASSIGNED FLIGHT before comparing, so a solution that covers
+  more flights is not unfairly penalized for burning more total fuel. The
+  efficiency delta therefore isolates "how well does each assigned flight
+  fit into a rotation", independent of how many were covered.
+*/
+function buildBaselineDeltas(run, baseline) {
+  const optCovPP = run.kpi.coverage * 100;
+  const baseCovPP = baseline.coverage * 100;
+  const covDeltaPP = optCovPP - baseCovPP; // higher is better
+
+  const optIdlePf = perFlight(
+    run.kpi.total_idle_minutes,
+    run.kpi.assigned_flights,
+  );
+  const baseIdlePf = perFlight(
+    baseline.idle_minutes,
+    baseline.assigned_flights,
+  );
+  const idleDeltaPct =
+    baseIdlePf > 0 ? ((optIdlePf - baseIdlePf) / baseIdlePf) * 100 : 0; // lower better
+
+  const optFuelPf = perFlight(run.kpi.total_fuel_kg, run.kpi.assigned_flights);
+  const baseFuelPf = perFlight(baseline.fuel_kg, baseline.assigned_flights);
+  const fuelDeltaPct =
+    baseFuelPf > 0 ? ((optFuelPf - baseFuelPf) / baseFuelPf) * 100 : 0; // lower better
+
+  return { covDeltaPP, idleDeltaPct, fuelDeltaPct, baseCovPP };
+}
+
+function BaselineMetric({ label, text, good, bad }) {
+  const cls = good ? "delta-good" : bad ? "delta-bad" : "delta-neutral";
+  return (
+    <div className="bl-metric">
+      <span className="bl-label">{label}</span>
+      <span className={`bl-delta ${cls}`}>{text}</span>
     </div>
   );
 }

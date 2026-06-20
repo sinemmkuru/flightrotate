@@ -151,3 +151,60 @@
   margin-bottom: 12px;
   color: var(--text-primary);
 }
+/* --- Baseline comparison strip --- */
+.baseline-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  background: var(--bg-secondary, #161616);
+  border: 1px solid var(--border, #2a2a2a);
+  border-left: 3px solid #378add;
+  border-radius: 10px;
+  padding: 12px 18px;
+  margin-bottom: 4px;
+}
+.baseline-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.baseline-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #eee);
+}
+.baseline-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary, #999);
+}
+.baseline-metrics {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.bl-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.bl-label {
+  font-size: 11px;
+  color: var(--text-secondary, #999);
+}
+.bl-delta {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.delta-good {
+  color: #5fb878;
+}
+.delta-bad {
+  color: #e07a6e;
+}
+.delta-neutral {
+  color: var(--text-secondary, #999);
+}
