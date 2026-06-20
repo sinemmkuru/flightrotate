@@ -8,11 +8,19 @@ The FCG is a Directed Acyclic Graph (DAG):
 
 An edge A -> B is feasible when:
   1. Spatial:  A.destination == B.origin (aircraft is in the right place)
-  2. Temporal: B departs at least `min_turnaround` minutes after A arrives
+  2. Temporal: B departs at least `min_turnaround` minutes after A arrives,
+     and the ground gap is either a same-day idle (<= max_idle) or a single
+     overnight rest (RON, <= max_overnight that crosses to the next day).
 
 Edge attributes:
-  - idle_minutes : ground time between A's arrival and B's departure
+  - idle_minutes : productive ground time charged as idle / APU fuel.
+                   For an overnight (RON) connection this is 0, because the
+                   aircraft is parked and the APU is shut down overnight.
   - fuel_cost_kg : fuel of flying B plus APU fuel during the idle period
+  - is_overnight : True if this connection is an overnight rest (RON)
+  - gap_minutes  : the true wall-clock gap between A's arrival and B's
+                   departure (kept for reporting; equals idle_minutes for
+                   same-day connections)
 
 The graph is acyclic because edges only ever point forward in time.
 """
@@ -25,17 +33,18 @@ from engine.cost_model import connection_fuel_kg
 # Used when an airport-specific value is not available.
 DEFAULT_MIN_TURNAROUND = 45
 
-# Maximum sensible idle time between two flights (minutes).
-# Connections with longer idle are not added: an aircraft sitting idle
-# for many hours is operationally pointless and only bloats the graph.
+# Maximum sensible same-day idle time between two flights (minutes).
+# Same-day connections with longer idle are not added: an aircraft sitting
+# idle for many hours mid-day is operationally pointless and only bloats the
+# graph.
 MAX_IDLE_MINUTES = 240  # 4 hours
 
 # Maximum ground gap (minutes) treated as a single overnight rest (RON).
-# A gap that exceeds MAX_IDLE_MINUTES but stays within this bound is an
-# overnight stop: the aircraft parks for the night and resumes the next
-# operational morning. Longer gaps are NOT connected — that would mean
-# parking idle for more than one night; intermediate flights should fill
-# the rotation, or the rotation simply ends there.
+# A gap that exceeds MAX_IDLE_MINUTES but stays within this bound and crosses
+# to the next calendar day is an overnight stop: the aircraft parks for the
+# night and resumes the next operational morning. Longer gaps are NOT
+# connected — that would mean parking idle for more than one night;
+# intermediate flights should fill the rotation, or the rotation ends there.
 MAX_OVERNIGHT_MINUTES = 1200  # 20 hours
 
 
@@ -52,12 +61,14 @@ def build_flight_connection_graph(
         flights: list of Flight ORM objects (must have flight_id, origin,
                  destination, scheduled_departure, scheduled_arrival,
                  distance_km)
-        min_turnaround: minimum ground time required between two flights
-                        (minutes)
+        min_turnaround: minimum ground time required between two flights (min)
+        max_idle: maximum same-day idle gap to still form a connection (min)
+        max_overnight: maximum overnight (RON) gap to still connect (min)
 
     Returns:
-        A networkx.DiGraph where nodes are flight_ids and edges are
-        feasible connections with idle_minutes and fuel_cost_kg attributes.
+        A networkx.DiGraph where nodes are flight_ids and edges are feasible
+        connections with idle_minutes, fuel_cost_kg, is_overnight and
+        gap_minutes attributes.
     """
     graph = nx.DiGraph()
 
@@ -83,50 +94,49 @@ def build_flight_connection_graph(
             if a.destination != b.origin:
                 continue
 
-            # Condition 2 - Temporal: enough time for turnaround, then classify
-        # the gap as either same-day ground idle or an overnight rest (RON).
-        gap = (b.scheduled_departure - a.scheduled_arrival).total_seconds() / 60.0
-        if gap < min_turnaround:
-            continue
+            # Condition 2 - Temporal: enough time for turnaround, then
+            # classify the gap as same-day idle or an overnight rest (RON).
+            gap = (b.scheduled_departure - a.scheduled_arrival).total_seconds() / 60.0
+            if gap < min_turnaround:
+                continue
 
-        crosses_to_next_day = (
-            b.scheduled_departure.date() > a.scheduled_arrival.date()
-        )
+            crosses_to_next_day = (
+                b.scheduled_departure.date() > a.scheduled_arrival.date()
+            )
 
-        if not crosses_to_next_day:
-            # Same calendar day: an ordinary turnaround / ground idle.
-            if gap > max_idle:
-                continue  # too long a mid-day gap for a sensible connection
-            idle_minutes = gap
-            is_overnight = False
-        else:
-            if gap > max_overnight:
-                continue  # more than one night of parking — don't connect
-            if gap <= max_idle:
-                # A short gap that merely crosses midnight (e.g. 23:40 -> 00:30)
-                # is still a normal turnaround, not an overnight rest.
+            if not crosses_to_next_day:
+                # Same calendar day: an ordinary turnaround / ground idle.
+                if gap > max_idle:
+                    continue  # too long a mid-day gap for a sensible connection
                 idle_minutes = gap
                 is_overnight = False
             else:
-                # Remain-over-night: APU is shut down and the aircraft is
-                # parked, so this gap is NOT productive idle and must not be
-                # charged as idle time or APU fuel. Recorded separately.
-                idle_minutes = 0.0
-                is_overnight = True
+                if gap > max_overnight:
+                    continue  # more than one night of parking — don't connect
+                if gap <= max_idle:
+                    # A short gap that merely crosses midnight (e.g.
+                    # 23:40 -> 00:30) is still a normal turnaround.
+                    idle_minutes = gap
+                    is_overnight = False
+                else:
+                    # Remain-over-night: APU is shut down and the aircraft is
+                    # parked, so this gap is NOT productive idle and must not
+                    # be charged as idle time or APU fuel. Recorded separately.
+                    idle_minutes = 0.0
+                    is_overnight = True
 
-            # Feasible connection found - compute edge weight
-            fuel = connection_fuel_kg(b.distance_km, idle)
-
+            # Feasible connection — add the edge. This runs for BOTH same-day
+            # and overnight connections. idle_minutes is 0 for overnight, so
+            # the APU fuel term inside connection_fuel_kg is naturally zero.
+            fuel = connection_fuel_kg(b.distance_km, idle_minutes)
             graph.add_edge(
-            a.flight_id, b.flight_id,
-            idle_minutes=idle_minutes,          # was: idle
-            is_overnight=is_overnight,          # NEW
-            gap_minutes=gap,                     # NEW (true wall-clock gap)
-            # ... mevcut diğer attribute'ları (fuel/weight) AYNEN bırak,
-            #     ama içlerinde idle kullanıyorsan onları da idle_minutes yap
-            #edge'in fuel/weight'ini idle'dan hesaplıyorsan onu da idle_minutes'a çevir 
-            # #— böylece overnight kenar yakıt cezası almaz (APU kapalı, doğru).
-        )
+                a.flight_id,
+                b.flight_id,
+                idle_minutes=idle_minutes,
+                fuel_cost_kg=fuel,
+                is_overnight=is_overnight,
+                gap_minutes=gap,
+            )
 
     return graph
 

@@ -1,24 +1,23 @@
 """
 Upload endpoints: ingest flight schedules and aircraft data.
 
-For Phase 1 we expose two ingestion paths:
-  - POST /api/sample : generate synthetic Turkish domestic flight data
-                       (used by the "Generate sample" button in the UI)
-  - POST /api/upload : ingest a user-provided CSV (added in Day 6-7
-                       when frontend wiring is needed)
+Ingestion paths:
+  - POST /api/sample          : generate synthetic Turkish domestic flight data
+                                (used by the "Generate sample" button in the UI)
+  - POST /api/upload/flights  : ingest a user-provided flight-schedule CSV
+  - POST /api/upload/aircraft : ingest a user-provided aircraft-fleet CSV
 
-The synthetic generator already exists in services/flight_generator.py;
-this endpoint just exposes it via HTTP.
+The synthetic generator lives in services/flight_generator.py; the /sample
+endpoint just exposes it via HTTP (now with multi-day support via num_days).
 """
 import csv
 import io
 import math
 from datetime import datetime, date, timedelta
-
 from typing import Optional
+
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
-
 
 from services.flight_generator import generate_flights
 from persistence.database import SessionLocal
@@ -30,21 +29,30 @@ from persistence.models import (
     FlightConnection,
 )
 
-
 router = APIRouter()
+
+# Flight-schedule CSV: required columns. `flight_date` (YYYY-MM-DD) is an
+# OPTIONAL extra column — when present, each row is placed on its own
+# calendar date, enabling multi-day uploads. When absent, every flight
+# falls on today's date (original single-day behavior).
+REQUIRED_COLUMNS = ["flight_id", "origin", "destination", "dep_time", "arr_time"]
 
 
 class SampleRequest(BaseModel):
     """Body of POST /api/sample."""
     size: str = Field("medium", pattern="^(small|medium|large)$")
     seed: Optional[int] = None
+    num_days: int = Field(1, ge=1, le=120)  # per-day load * num_days = total
     clear_existing: bool = True
 
 
 class SampleResponse(BaseModel):
     flights_generated: int
     aircraft_generated: int
-    date: str
+    date: str                       # start date (kept for the existing UI)
+    num_days: int = 1
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 @router.post("/sample", response_model=SampleResponse)
@@ -73,7 +81,9 @@ def generate_sample(request: SampleRequest):
             db.close()
 
     try:
-        result = generate_flights(size=request.size, seed=request.seed)
+        result = generate_flights(
+            size=request.size, seed=request.seed, num_days=request.num_days
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
 
@@ -81,13 +91,10 @@ def generate_sample(request: SampleRequest):
         flights_generated=result["flights_generated"],
         aircraft_generated=result["aircraft_generated"],
         date=result["date"],
+        num_days=result.get("num_days", 1),
+        start_date=result.get("start_date"),
+        end_date=result.get("end_date"),
     )
-    import csv
-import io
-import math
-from datetime import datetime, date, timedelta
-
-REQUIRED_COLUMNS = ["flight_id", "origin", "destination", "dep_time", "arr_time"]
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -106,9 +113,12 @@ async def upload_flights(file: UploadFile = File(...)):
     Ingest a user-provided flight schedule (CSV).
 
     Required columns: flight_id, origin, destination, dep_time, arr_time
-    (dep_time/arr_time are HH:MM). Replaces the current flight schedule;
-    the existing fleet and airports are kept. Distances are computed via
-    Haversine from the airports table. Returns structured errors/warnings.
+    (dep_time/arr_time are HH:MM). Optional column: flight_date (YYYY-MM-DD)
+    — when present each row is placed on that calendar date, so the schedule
+    can span multiple days; when absent all flights fall on today. Replaces
+    the current flight schedule; the existing fleet and airports are kept.
+    Distances are computed via Haversine from the airports table. Returns
+    structured errors/warnings.
     """
     # 1. File type
     if not file.filename or not file.filename.lower().endswith(".csv"):
@@ -132,6 +142,8 @@ async def upload_flights(file: UploadFile = File(...)):
             "errors": [{"type": "missing_columns", "columns": missing}],
             "warnings": [],
         }
+
+    has_date_col = "flight_date" in headers
 
     db = SessionLocal()
     try:
@@ -177,6 +189,17 @@ async def upload_flights(file: UploadFile = File(...)):
                 errors.append({"type": "invalid_time_format", "row": line,
                                "column": "arr_time", "value": arr_s})
 
+            # Optional per-row calendar date (multi-day schedules).
+            fdate = None
+            if has_date_col:
+                fdate_s = (row.get("flight_date") or "").strip()
+                if fdate_s:
+                    try:
+                        fdate = datetime.strptime(fdate_s, "%Y-%m-%d").date()
+                    except ValueError:
+                        errors.append({"type": "invalid_date_format", "row": line,
+                                       "column": "flight_date", "value": fdate_s})
+
             if origin not in airports:
                 errors.append({"type": "unknown_airport", "row": line,
                                "column": "origin", "value": origin})
@@ -189,7 +212,7 @@ async def upload_flights(file: UploadFile = File(...)):
             if fid:
                 seen_ids.setdefault(fid, []).append(line)
 
-            parsed.append((fid, origin, dest, dep_t, arr_t))
+            parsed.append((fid, origin, dest, dep_t, arr_t, fdate))
 
         for fid, lines in seen_ids.items():
             if len(lines) > 1:
@@ -209,12 +232,13 @@ async def upload_flights(file: UploadFile = File(...)):
         db.query(Flight).delete(synchronize_session=False)
         db.commit()
 
-        base = date.today()
-        for (fid, origin, dest, dep_t, arr_t) in parsed:
+        default_base = date.today()
+        for (fid, origin, dest, dep_t, arr_t, fdate) in parsed:
+            base = fdate or default_base
             dep_dt = datetime.combine(base, dep_t)
             arr_dt = datetime.combine(base, arr_t)
             if arr_dt <= dep_dt:
-                arr_dt += timedelta(days=1)  # overnight flight
+                arr_dt += timedelta(days=1)  # overnight flight (crosses midnight)
             lat1, lon1 = airports[origin]
             lat2, lon2 = airports[dest]
             dist = int(round(_haversine_km(lat1, lon1, lat2, lon2)))
@@ -242,9 +266,11 @@ async def upload_flights(file: UploadFile = File(...)):
             "errors": [],
             "warnings": warnings,
             "aircraft_available": aircraft_count,
+            "multi_day": has_date_col,
         }
     finally:
         db.close()
+
 
 @router.post("/upload/aircraft")
 async def upload_aircraft(file: UploadFile = File(...)):

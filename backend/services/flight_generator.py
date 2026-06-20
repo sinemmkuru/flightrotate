@@ -6,6 +6,9 @@ Generates realistic Turkish domestic flight schedules with:
   - Peak-hour bias (morning and evening rushes)
   - Distance-based flight durations (via haversine)
   - Balanced aircraft count relative to flight count
+  - Multi-day schedules (num_days): the same fleet flies a fresh randomized
+    schedule each operational day, so aircraft rotations can chain across
+    nights via overnight (RON) edges in the Flight Connection Graph.
 
 The generator is constrained-random: not pure random, but random within
 realistic operational rules. A seed parameter makes output reproducible.
@@ -19,9 +22,10 @@ from persistence.models import Airport, Flight, Aircraft
 from engine.geo import haversine, estimate_flight_duration_minutes
 
 
-# Size presets: (flight_count, aircraft_count).
+# Size presets: (flights_PER_DAY, aircraft_count).
 # Aircraft-to-flight ratio of ~1/8 matches realistic fleet sizing:
-# a B737-800 can typically fly 8-10 legs per day.
+# a B737-800 can typically fly 8-10 legs per day. The flight count is the
+# PER-DAY load; total flights = flights_per_day * num_days.
 SIZE_PRESETS = {
     "small": (40, 8),
     "medium": (200, 25),
@@ -46,6 +50,7 @@ EVENING_PEAK = (17, 20)
 # Lower value = more even distribution across the operating day.
 PEAK_HOUR_PROBABILITY = 0.35
 
+
 def _weighted_airport_choice(operational_codes, weights):
     """
     Picks an airport code using hub weights.
@@ -69,7 +74,7 @@ def _weighted_airport_choice(operational_codes, weights):
     return random.choices(population, weights=probabilities, k=1)[0]
 
 
-def _random_departure_time(base_date):
+def _random_departure_time(day_base):
     """
     Generates a departure time biased toward peak hours but balanced
     enough to allow long aircraft rotations across the operating day.
@@ -78,6 +83,9 @@ def _random_departure_time(base_date):
     cannot connect to a next flight until evening, breaking its rotation.
     The PEAK_HOUR_PROBABILITY constant controls how strongly we cluster
     flights at the peaks.
+
+    `day_base` is a datetime at 00:00 of the operational day; the returned
+    departure is placed on that same day.
     """
     if random.random() < PEAK_HOUR_PROBABILITY:
         # Peak flight
@@ -90,26 +98,33 @@ def _random_departure_time(base_date):
         hour = random.randint(6, 22)
 
     minute = random.choice([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55])
-    return base_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return day_base.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
-def generate_flights(size="medium", seed=None, target_date=None):
+def generate_flights(size="medium", seed=None, target_date=None, num_days=1):
     """
     Generates a synthetic flight schedule and aircraft fleet, writes them to DB.
 
     Parameters:
         size: "small", "medium", or "large"
         seed: optional int for reproducible output
-        target_date: optional date object; defaults to today
+        target_date: optional date object; defaults to today (the first day)
+        num_days: number of consecutive operational days to generate (>= 1).
+                  flight_count from SIZE_PRESETS is the PER-DAY load, so the
+                  total number of flights is flight_count * num_days. The
+                  fleet is created once and shared across all days.
 
     Returns:
-        dict with counts of generated flights and aircraft
+        dict with counts and the start/end dates of the generated schedule
     """
     if seed is not None:
         random.seed(seed)
 
     if size not in SIZE_PRESETS:
         raise ValueError(f"size must be one of {list(SIZE_PRESETS.keys())}")
+
+    if num_days < 1:
+        raise ValueError("num_days must be >= 1")
 
     flight_count, aircraft_count = SIZE_PRESETS[size]
 
@@ -133,11 +148,11 @@ def generate_flights(size="medium", seed=None, target_date=None):
         airport_map = {a.iata_code: a for a in operational}
         operational_codes = list(airport_map.keys())
 
-        # --- Generate aircraft fleet ---
-        # Bases are weighted toward hubs too
+        # --- Generate aircraft fleet (created ONCE, shared across all days) ---
+        # Bases are weighted toward hubs too.
         aircraft_list = []
         for i in range(aircraft_count):
-           # Distribute aircraft across hubs proportionally to their
+            # Distribute aircraft across hubs proportionally to their
             # share of flight origins. This matches real airline practice:
             # bigger hubs need more aircraft based there.
             #
@@ -164,6 +179,8 @@ def generate_flights(size="medium", seed=None, target_date=None):
                 tail_number=tail,
                 aircraft_type="B737-800",
                 base_airport=base_code,
+                # Available from 05:00 on the first day; rotations may then
+                # continue across subsequent days via overnight connections.
                 available_from=base_date.replace(hour=5, minute=0),
                 maintenance_due=date(base_date.year + 1, 1, 1),
                 status="active",
@@ -171,44 +188,57 @@ def generate_flights(size="medium", seed=None, target_date=None):
             aircraft_list.append(aircraft)
             db.add(aircraft)
 
-        # --- Generate flights ---
+        # --- Generate flights, one operational day at a time ---
+        # Each day gets a fresh randomized schedule (the RNG keeps advancing),
+        # so days differ but the whole run stays reproducible under `seed`.
         flights_added = 0
-        for i in range(flight_count):
-            origin = _weighted_airport_choice(operational_codes, HUB_WEIGHTS)
-            destination = _weighted_airport_choice(operational_codes, HUB_WEIGHTS)
-            # Origin and destination must differ
-            while destination == origin:
+        flight_seq = 0  # globally unique flight-number counter across all days
+        for day_index in range(num_days):
+            day_base = base_date + timedelta(days=day_index)
+            day_tag = day_base.strftime("%Y%m%d")
+            for i in range(flight_count):
+                origin = _weighted_airport_choice(operational_codes, HUB_WEIGHTS)
                 destination = _weighted_airport_choice(operational_codes, HUB_WEIGHTS)
+                # Origin and destination must differ
+                while destination == origin:
+                    destination = _weighted_airport_choice(operational_codes, HUB_WEIGHTS)
 
-            o = airport_map[origin]
-            d = airport_map[destination]
+                o = airport_map[origin]
+                d = airport_map[destination]
 
-            distance = haversine(o.latitude, o.longitude, d.latitude, d.longitude)
-            duration = estimate_flight_duration_minutes(distance)
+                distance = haversine(o.latitude, o.longitude, d.latitude, d.longitude)
+                duration = estimate_flight_duration_minutes(distance)
 
-            departure = _random_departure_time(base_date)
-            arrival = departure + timedelta(minutes=duration)
+                departure = _random_departure_time(day_base)
+                arrival = departure + timedelta(minutes=duration)
 
-            flight = Flight(
-                flight_id=f"F{i + 1:04d}_{base_date.strftime('%Y%m%d')}",
-                flight_number=f"TK{2000 + i}",
-                origin=origin,
-                destination=destination,
-                scheduled_departure=departure,
-                scheduled_arrival=arrival,
-                distance_km=round(distance),
-                status="scheduled",
-            )
-            db.add(flight)
-            flights_added += 1
+                flight = Flight(
+                    # flight_id is unique via the per-day date suffix;
+                    # flight_number is globally unique via flight_seq.
+                    flight_id=f"F{i + 1:04d}_{day_tag}",
+                    flight_number=f"TK{2000 + flight_seq}",
+                    origin=origin,
+                    destination=destination,
+                    scheduled_departure=departure,
+                    scheduled_arrival=arrival,
+                    distance_km=round(distance),
+                    status="scheduled",
+                )
+                db.add(flight)
+                flights_added += 1
+                flight_seq += 1
 
         db.commit()
 
+        end_date = base_date + timedelta(days=num_days - 1)
         return {
             "size": size,
+            "num_days": num_days,
             "flights_generated": flights_added,
             "aircraft_generated": len(aircraft_list),
-            "date": base_date.strftime("%Y-%m-%d"),
+            "date": base_date.strftime("%Y-%m-%d"),        # start (kept for the UI)
+            "start_date": base_date.strftime("%Y-%m-%d"),
+            "end_date": end_date.strftime("%Y-%m-%d"),
         }
 
     except Exception:
