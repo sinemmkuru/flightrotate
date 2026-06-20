@@ -307,3 +307,48 @@ def get_baseline(db: Session = Depends(get_db)):
     kpis = compute_baseline_kpis(flights, aircraft_list)
     kpis["available"] = True
     return kpis
+
+    # ---------- Disruption / recovery ----------
+from fastapi import HTTPException
+from pydantic import BaseModel
+from typing import Optional as _Optional
+
+
+class DisruptRequest(BaseModel):
+    type: str                              # "ground_aircraft" | "cancel"
+    flight_id: _Optional[str] = None       # required for "cancel"
+    tail_number: _Optional[str] = None     # required for "ground_aircraft"
+    weights: _Optional[dict] = None
+
+
+@router.post("/disrupt")
+def disrupt(req: DisruptRequest, db: Session = Depends(get_db)):
+    """
+    Apply a disruption (aircraft AOG or flight cancellation), re-optimize with
+    CP-SAT, and return a before/after impact report. Reads the live schedule
+    but never mutates the database.
+    """
+    from persistence.models import Flight, Aircraft
+    from engine.disruption import run_disruption
+
+    flights = (
+        db.query(Flight)
+        .filter(Flight.status == "scheduled", Flight.deleted_at == None)  # noqa: E711
+        .all()
+    )
+    aircraft_list = (
+        db.query(Aircraft)
+        .filter(Aircraft.status == "active", Aircraft.deleted_at == None)  # noqa: E711
+        .all()
+    )
+    if not flights or not aircraft_list:
+        raise HTTPException(status_code=400, detail="No flights or aircraft loaded.")
+
+    try:
+        return run_disruption(
+            flights, aircraft_list,
+            dtype=req.type, flight_id=req.flight_id,
+            tail_number=req.tail_number, weights=req.weights,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
