@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { path: "/upload", label: "Data Upload", icon: "📤" },
   { path: "/compare", label: "Compare", icon: "⚖️" },
   { path: "/map", label: "Map", icon: "🗺️" },
+  { path: "/disruption", label: "Disruption", icon: "🔄" },
 ];
 
 function Layout({ children }) {

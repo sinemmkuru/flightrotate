@@ -13,6 +13,7 @@ import Configure from "./pages/Configure";
 import Upload from "./pages/Upload";
 import Compare from "./pages/Compare";
 import MapView from "./pages/MapView";
+import Disruption from "./pages/Disruption";
 
 import "./App.css";
 
@@ -28,6 +29,7 @@ function App() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
           <Route path="/compare" element={<Compare />} />
           <Route path="/map" element={<MapView />} />
+          <Route path="/disruption" element={<Disruption />} />
         </Routes>
       </Layout>
     </BrowserRouter>

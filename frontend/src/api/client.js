@@ -114,3 +114,8 @@ export async function getBaseline() {
   const { data } = await client.get("/baseline");
   return data;
 }
+// Simulate a disruption (AOG / cancel) and get a before/after recovery report.
+export async function disrupt(body) {
+  const { data } = await client.post("/disrupt", body);
+  return data;
+}
