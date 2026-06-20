@@ -39,6 +39,7 @@ class FitnessBreakdown:
     total_idle_minutes: int  # sum of idle time between consecutive flights
     total_fuel_kg: float     # sum of flight fuel + APU fuel
     is_feasible: bool        # True if no constraint is violated
+    ron_nights: int = 0      # NEW: overnight (remain-over-night) stops
 
 
 # Default objective weights (must sum to 1.0).
@@ -103,6 +104,7 @@ def evaluate_solution(
     coverage = assigned_count / total_flights if total_flights > 0 else 0.0
 
     total_idle_minutes = 0
+    ron_nights = 0
     total_fuel = 0.0
     is_feasible = True
 
@@ -120,6 +122,8 @@ def evaluate_solution(
             idle = edge["idle_minutes"]
             total_idle_minutes += idle
             total_fuel += idle_fuel_kg(idle)
+            if edge.get("is_overnight"):
+                ron_nights += 1
 
     # --- Efficiency: 0..1 score combining idle and fuel quality ---
     # Lower idle/fuel per flight -> higher efficiency.
@@ -162,4 +166,5 @@ def evaluate_solution(
         total_idle_minutes=total_idle_minutes,
         total_fuel_kg=total_fuel,
         is_feasible=is_feasible,
+        ron_nights=ron_nights,
     )
