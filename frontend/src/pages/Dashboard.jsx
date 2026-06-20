@@ -27,6 +27,7 @@ import {
   getBaseline,
 } from "../api/client";
 import useAppStore from "../store/useAppStore";
+import { co2Kg } from "../utils/emissions";
 import KpiCard from "../components/KpiCard";
 import GanttChart from "../components/GanttChart";
 import FlightDetailPanel from "../components/FlightDetailPanel";
@@ -178,6 +179,12 @@ function Dashboard() {
             <KpiCard
               label="Fuel cost"
               value={`$${Math.round(run.kpi.fuel_cost_usd).toLocaleString()}`}
+              accent="green"
+            />
+            <KpiCard
+              label="CO₂ emissions"
+              value={(co2Kg(run.kpi.total_fuel_kg) / 1000).toFixed(1)}
+              unit="t"
               accent="green"
             />
             <KpiCard

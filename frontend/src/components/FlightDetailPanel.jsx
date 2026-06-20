@@ -7,9 +7,15 @@
   this aircraft here". The "Why this rotation?" button generates a factual,
   data-grounded explanation of the chaining / turnaround feasibility - it does
   NOT fabricate the optimizer's internals.
+
+  It also shows a Fuel & emissions block: the optimized fuel and its CO2, plus
+  an estimated block-fuel breakdown (trip / taxi / reserve) for operational
+  context. The breakdown is a planning estimate and is not part of the
+  optimization objective.
 */
 
 import { useState } from "react";
+import { co2Kg, fuelBreakdown, fmtKg, fmtCo2 } from "../utils/emissions";
 import "./FlightDetailPanel.css";
 
 function fmt(iso) {
@@ -83,6 +89,7 @@ function FlightDetailPanel({ flight, assignments, onClose }) {
     null;
 
   const warn = flight.turnaround_warning;
+  const bd = fuelBreakdown(flight.fuel_kg);
 
   return (
     <div className="fdp">
@@ -129,9 +136,6 @@ function FlightDetailPanel({ flight, assignments, onClose }) {
         <span>Distance</span>
         <span>{flight.distance_km} km</span>
 
-        <span>Estimated fuel</span>
-        <span>{Math.round(flight.fuel_kg).toLocaleString()} kg</span>
-
         <span>Preceding flight</span>
         <span>
           {prev
@@ -152,6 +156,45 @@ function FlightDetailPanel({ flight, assignments, onClose }) {
             ? `${next.flight_number} ${next.origin}→${next.destination} (dep ${fmt(next.scheduled_departure)})`
             : "— (last leg)"}
         </span>
+      </div>
+
+      {/* --- Fuel & emissions --- */}
+      <div className="fdp-fuel">
+        <div className="fdp-fuel-head">Fuel &amp; emissions</div>
+        <div className="fdp-fuel-line">
+          <span>Optimized fuel</span>
+          <span>{fmtKg(flight.fuel_kg)}</span>
+        </div>
+        <div className="fdp-fuel-line fdp-co2-line">
+          <span>CO₂ emissions</span>
+          <span>{fmtCo2(co2Kg(flight.fuel_kg))}</span>
+        </div>
+
+        <div className="fdp-breakdown-head">
+          Estimated block fuel{" "}
+          <span className="fdp-est">planning estimate</span>
+        </div>
+        <div className="fdp-fuel-line sub">
+          <span>Trip (cruise)</span>
+          <span>{fmtKg(bd.trip)}</span>
+        </div>
+        <div className="fdp-fuel-line sub">
+          <span>Taxi (out + in)</span>
+          <span>{fmtKg(bd.taxi)}</span>
+        </div>
+        <div className="fdp-fuel-line sub">
+          <span>Reserve + contingency</span>
+          <span>{fmtKg(bd.reserve)}</span>
+        </div>
+        <div className="fdp-fuel-line fdp-fuel-total">
+          <span>Block fuel</span>
+          <span>{fmtKg(bd.block)}</span>
+        </div>
+
+        <div className="fdp-fuel-note">
+          CO₂ = optimized fuel × 3.16 (Jet A-1). Taxi &amp; reserve are typical
+          B737-800 estimates, not part of the optimization.
+        </div>
       </div>
 
       <button className="fdp-why-btn" onClick={() => setShowWhy((s) => !s)}>

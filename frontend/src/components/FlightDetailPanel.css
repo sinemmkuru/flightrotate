@@ -142,3 +142,58 @@
   border-radius: 8px;
   padding: 12px;
 }
+/* --- Fuel & emissions --- */
+.fdp-fuel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border, #2a2a2a);
+}
+.fdp-fuel-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #eee);
+  margin-bottom: 8px;
+}
+.fdp-fuel-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 4px 0;
+  color: var(--text-primary, #eee);
+}
+.fdp-fuel-line.sub {
+  font-size: 12.5px;
+  color: var(--text-secondary, #aaa);
+  padding: 3px 0 3px 12px;
+}
+.fdp-co2-line span:last-child {
+  color: #5fb878;
+  font-weight: 600;
+}
+.fdp-breakdown-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  margin: 12px 0 4px;
+}
+.fdp-est {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: #2a2a2a;
+  color: #999;
+}
+.fdp-fuel-total {
+  border-top: 1px dashed var(--border, #333);
+  margin-top: 4px;
+  padding-top: 7px;
+  font-weight: 600;
+}
+.fdp-fuel-note {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary, #888);
+}
