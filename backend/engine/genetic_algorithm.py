@@ -58,8 +58,15 @@ class GAResult:
     elapsed_seconds: float = 0.0
     generations_run: int = 0
 
+#----------------------------------------
+# run_genetic_algorithm — GA'yı başlatan ana fonksiyon. 
+#Her generation'da fitness değerlerini hesaplar, en iyi bireyi takip eder. 
+#Population'ın ortalama fitness'ini kaydeder ve WebSocket ile güncellemeler sağlar.
+#----------------------------------------
 
 def run_genetic_algorithm(
+    #----------------------------------------
+    #----------------------------------------
     flights: list,
     aircraft_list: list,
     graph,
