@@ -144,6 +144,22 @@ function Dashboard() {
         >
           {isOptimizing ? "Running..." : "Run optimization"}
         </button>
+        {run && (
+          <span style={{ display: "inline-flex", gap: 8, marginLeft: 8 }}>
+            <a
+              className="btn"
+              href={`http://localhost:8000/api/runs/${run.run_id}/export.csv`}
+            >
+              Export CSV
+            </a>
+            <a
+              className="btn"
+              href={`http://localhost:8000/api/runs/${run.run_id}/export.pdf`}
+            >
+              Export PDF
+            </a>
+          </span>
+        )}
       </header>
 
       {!run ? (
