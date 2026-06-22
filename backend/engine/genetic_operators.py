@@ -11,6 +11,13 @@ Design choices:
     level feasibility (each inherited rotation was already feasible in
     its parent) while introducing diversity at the fleet level.
   - Two mutation operators (extend / swap) that respect FCG feasibility.
+
+Determinism note:
+  Any iteration over a Python set of strings is ordered by the strings'
+  hashes, which are randomized per process (PYTHONHASHSEED). Such orders are
+  therefore turned into a canonical order with sorted(...) before they can
+  influence a result, so a fixed seed reproduces the same run across
+  processes/machines without relying on an environment variable.
 """
 
 import random
@@ -79,9 +86,11 @@ def crossover(
     child: dict[str, Optional[str]] = {fid: None for fid in flights_by_id}
     used_flights: set[str] = set()
 
-    # Process aircraft in random order so the same flight conflict
-    # is resolved differently each call (preserves diversity)
-    aircraft_order = list(all_tails)
+    # Process aircraft in random order so the same flight conflict is resolved
+    # differently each call (preserves diversity). sorted() first gives a
+    # canonical, hash-independent starting order, so the seeded shuffle below
+    # produces the SAME permutation across processes (reproducible runs).
+    aircraft_order = sorted(all_tails)
     random.shuffle(aircraft_order)
 
     for tail in aircraft_order:
