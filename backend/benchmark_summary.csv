@@ -1,4 +1,0 @@
-size,flights,aircraft,reps,coverage_mean_pct,coverage_std_pct,idle_mean_min,idle_std_min,fuel_mean_kg,fuel_std_kg,cost_mean_usd,cost_std_usd,time_mean_s,time_std_s,time_min_s,time_max_s
-small,40,8,5,45.0,0.0,1379.2,22.5,45992.9,507.6,37714.18,416.21,1.37,0.59,0.95,2.38
-medium,200,25,5,51.2,1.44,9015.4,701.0,266098.8,7325.5,218201.02,6006.87,4.35,0.41,3.87,4.79
-large,700,70,5,50.54,0.73,31872.4,801.0,885075.3,16387.3,725761.75,13437.57,15.74,0.22,15.38,15.92
