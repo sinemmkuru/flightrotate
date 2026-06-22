@@ -19,11 +19,26 @@ Edge attributes:
   - fuel_cost_kg : fuel of flying B plus APU fuel during the idle period
   - is_overnight : True if this connection is an overnight rest (RON)
   - gap_minutes  : the true wall-clock gap between A's arrival and B's
-                   departure (kept for reporting; equals idle_minutes for
-                   same-day connections)
+                   departure (equals idle_minutes for same-day connections)
+
+Scalability
+-----------
+Instead of checking every ordered pair of flights (O(n^2), which becomes
+billions of comparisons for multi-month horizons), flights are bucketed by
+their ORIGIN airport, each bucket sorted by departure time. For a flight A we
+only look at flights departing A's destination airport within the feasible
+time window [arrival + min_turnaround, arrival + max_overnight], located with a
+binary search. The 20-hour window bounds the candidate set to roughly a single
+day of that airport's departures, so the build stays near O(n log n) regardless
+of how many days the schedule spans. The resulting graph is identical to the
+naive O(n^2) build.
 
 The graph is acyclic because edges only ever point forward in time.
 """
+
+import bisect
+from collections import defaultdict
+from datetime import timedelta
 
 import networkx as nx
 
@@ -57,6 +72,9 @@ def build_flight_connection_graph(
     """
     Builds the Flight Connection Graph from a list of Flight objects.
 
+    Uses airport bucketing + a time-window binary search so the build scales
+    to multi-month schedules without an O(n^2) pairwise comparison.
+
     Parameters:
         flights: list of Flight ORM objects (must have flight_id, origin,
                  destination, scheduled_departure, scheduled_arrival,
@@ -84,22 +102,41 @@ def build_flight_connection_graph(
             distance_km=flight.distance_km,
         )
 
-    # Check every ordered pair (A, B) for a feasible connection.
+    # --- Bucket flights by ORIGIN airport, sorted by departure time. ---
+    # departures_by_origin[X] = flights departing X, ascending by departure.
+    # dep_times_by_origin[X]  = parallel list of departure datetimes (for bisect).
+    departures_by_origin = defaultdict(list)
+    for f in flights:
+        departures_by_origin[f.origin].append(f)
+    for origin in departures_by_origin:
+        departures_by_origin[origin].sort(key=lambda f: f.scheduled_departure)
+    dep_times_by_origin = {
+        origin: [f.scheduled_departure for f in bucket]
+        for origin, bucket in departures_by_origin.items()
+    }
+
+    # --- For each flight A, scan only the feasible window at its destination. ---
     for a in flights:
-        for b in flights:
-            if a.flight_id == b.flight_id:
+        candidates = departures_by_origin.get(a.destination)
+        if not candidates:
+            continue  # nothing departs where A lands -> A is a dead end
+
+        dep_times = dep_times_by_origin[a.destination]
+
+        # B must depart within [arrival + min_turnaround, arrival + max_overnight].
+        earliest = a.scheduled_arrival + timedelta(minutes=min_turnaround)
+        latest = a.scheduled_arrival + timedelta(minutes=max_overnight)
+        lo = bisect.bisect_left(dep_times, earliest)
+        hi = bisect.bisect_right(dep_times, latest)
+
+        for idx in range(lo, hi):
+            b = candidates[idx]
+            if b.flight_id == a.flight_id:
                 continue  # a flight cannot connect to itself
 
-            # Condition 1 - Spatial: A must land where B departs
-            if a.destination != b.origin:
-                continue
-
-            # Condition 2 - Temporal: enough time for turnaround, then
-            # classify the gap as same-day idle or an overnight rest (RON).
+            # Gap is already guaranteed in [min_turnaround, max_overnight] by
+            # the window; classify it as same-day idle or an overnight rest.
             gap = (b.scheduled_departure - a.scheduled_arrival).total_seconds() / 60.0
-            if gap < min_turnaround:
-                continue
-
             crosses_to_next_day = (
                 b.scheduled_departure.date() > a.scheduled_arrival.date()
             )
@@ -111,8 +148,6 @@ def build_flight_connection_graph(
                 idle_minutes = gap
                 is_overnight = False
             else:
-                if gap > max_overnight:
-                    continue  # more than one night of parking — don't connect
                 if gap <= max_idle:
                     # A short gap that merely crosses midnight (e.g.
                     # 23:40 -> 00:30) is still a normal turnaround.
@@ -125,9 +160,8 @@ def build_flight_connection_graph(
                     idle_minutes = 0.0
                     is_overnight = True
 
-            # Feasible connection — add the edge. This runs for BOTH same-day
-            # and overnight connections. idle_minutes is 0 for overnight, so
-            # the APU fuel term inside connection_fuel_kg is naturally zero.
+            # idle_minutes is 0 for overnight, so the APU fuel term inside
+            # connection_fuel_kg is naturally zero.
             fuel = connection_fuel_kg(b.distance_km, idle_minutes)
             graph.add_edge(
                 a.flight_id,
