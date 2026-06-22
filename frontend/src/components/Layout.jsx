@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { path: "/compare", label: "Compare", icon: "⚖️" },
   { path: "/map", label: "Map", icon: "🗺️" },
   { path: "/disruption", label: "Disruption", icon: "🔄" },
+  { path: "/history", label: "History", icon: "🕘" },
 ];
 
 function Layout({ children }) {
