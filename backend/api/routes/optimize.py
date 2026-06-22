@@ -1,17 +1,23 @@
 """
-Optimization endpoint: runs the genetic algorithm and persists the result.
+Optimization endpoint: runs the chosen solver and persists the result.
 
 This is the heart of the API. POST /api/optimize:
   1. Loads flights and aircraft from the database
   2. Builds the Flight Connection Graph
-  3. Runs the genetic algorithm with the requested weights/parameters
+  3. Runs the requested solver (genetic algorithm, CP-SAT, or auto-selected)
   4. Persists the run and its assignments to the database
   5. Returns the run_id so the client can fetch results
 
-For simplicity in Phase 1 the call is synchronous - the client waits for
-the run to finish. With our current dataset this is ~4 seconds, well
-within an HTTP timeout. Async/background execution will be added later
-when long runs make it necessary (see Future Work in the thesis).
+Solver selection:
+  - "genetic" -> genetic algorithm (heuristic)
+  - "cp_sat"  -> CP-SAT exact solver
+  - "auto"    -> CP-SAT for small instances, GA for large ones (CP-SAT is
+                 exact and fast on small inputs but slows down at scale, so
+                 above AUTO_CP_SAT_MAX_FLIGHTS we hand off to the GA).
+
+For simplicity the call is synchronous - the client waits for the run to
+finish. Async/background execution will be added later when long runs make
+it necessary (see Future Work in the thesis).
 """
 
 import uuid
@@ -34,6 +40,11 @@ from engine.solution import DEFAULT_WEIGHTS
 
 
 router = APIRouter()
+
+# Above this many flights, "auto" hands off to the GA: CP-SAT stays exact and
+# fast on small/medium instances but its solve time grows quickly with size.
+# Tune this after the scaling benchmark identifies the crossover point.
+AUTO_CP_SAT_MAX_FLIGHTS = 400
 
 
 @router.post("/optimize", response_model=OptimizeResponse)
@@ -93,9 +104,6 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
             detail=f"Weights must sum to ~1.0 (got {weight_total:.3f})",
         )
 
-    # --- 3. Currently only the genetic algorithm is implemented. Bu kısmı sildik. adece GA varken eklenmiş bir erken guard---
-    
-
     # --- 4. Build the FCG ---
     graph = build_flight_connection_graph(flights)
 
@@ -116,15 +124,31 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
     else:
         params_dict = DEFAULT_GA_PARAMS
 
-    # --- 6. Run the optimizer ---
-    if request.algorithm == "cp_sat":
+    # --- 6. Resolve the solver and run it ---
+    # "auto" picks a concrete solver by instance size; the resolved name is what
+    # we store and report, so the run record always names a real algorithm.
+    requested_algorithm = request.algorithm
+    if requested_algorithm == "auto":
+        effective_algorithm = (
+            "cp_sat" if len(flights) <= AUTO_CP_SAT_MAX_FLIGHTS else "genetic"
+        )
+    else:
+        effective_algorithm = requested_algorithm
+
+    cp_status = None  # CP-SAT solve status (OPTIMAL / FEASIBLE / ...), if used
+    if effective_algorithm == "cp_sat":
         from engine.cp_sat_solver import run_cp_sat
+        cp_kwargs = {}
+        if request.time_limit_seconds is not None:
+            cp_kwargs["time_limit_seconds"] = request.time_limit_seconds
         result = run_cp_sat(
             flights=flights,
             aircraft_list=aircraft_list,
             graph=graph,
             weights=weights_dict,
+            **cp_kwargs,
         )
+        cp_status = result.status
     else:
         result = run_genetic_algorithm(
             flights=flights,
@@ -141,7 +165,7 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
     new_run = OptimizationRun(
         run_id=run_id,
         created_at=datetime.now(timezone.utc),
-        algorithm=request.algorithm,
+        algorithm=effective_algorithm,   # store the solver actually used
         weight_idle=w.idle,
         weight_fuel=w.fuel,
         weight_coverage=w.coverage,
@@ -194,12 +218,19 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
 
     db.commit()
 
+    # --- 9. Build a human-readable solver label for the message ---
+    solver_label = effective_algorithm
+    if cp_status is not None:
+        solver_label = f"cp_sat ({cp_status.lower()})"
+    if requested_algorithm == "auto":
+        solver_label = f"auto -> {solver_label}"
+
     return OptimizeResponse(
         run_id=run_id,
         status="completed",
         message=(
             f"Optimization complete in {result.elapsed_seconds:.1f}s. "
             f"Coverage: {result.best_fitness.coverage:.1%}, "
-            f"Fitness: {result.best_fitness.fitness:.4f}"
+            f"Fitness: {result.best_fitness.fitness:.4f} [{solver_label}]"
         ),
     )

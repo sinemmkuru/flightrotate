@@ -32,11 +32,21 @@ class GAParameters(BaseModel):
 
 
 class OptimizeRequest(BaseModel):
-    """Body of POST /api/optimize."""
-    algorithm: str = Field("genetic", pattern="^(genetic|cp_sat)$")
+    """Body of POST /api/optimize.
+
+    algorithm:
+      - "genetic" : run the genetic algorithm (heuristic)
+      - "cp_sat"  : run the CP-SAT exact solver
+      - "auto"    : pick by instance size (small -> cp_sat, large -> genetic)
+    time_limit_seconds:
+      - optional CP-SAT time cap (overrides the solver default). Ignored by the
+        genetic algorithm. Useful for benchmarking where CP-SAT becomes slow.
+    """
+    algorithm: str = Field("genetic", pattern="^(genetic|cp_sat|auto)$")
     weights: ObjectiveWeights = ObjectiveWeights()
     parameters: Optional[GAParameters] = None
     seed: Optional[int] = None
+    time_limit_seconds: Optional[float] = Field(None, ge=1.0, le=600.0)
 
 
 class OptimizeResponse(BaseModel):
@@ -81,7 +91,8 @@ class AssignmentRow(BaseModel):
     fuel_kg: float
     turnaround_warning: bool
 
-    # ---------- Comparison schemas (Day 8) ----------
+
+# ---------- Comparison schemas (Day 8) ----------
 class ComparisonRequest(BaseModel):
     """Body of POST /api/compare: the two run_ids to compare."""
     run_a_id: str
@@ -128,7 +139,8 @@ class ComparisonResult(BaseModel):
     b_wins: int
     analysis_text: str
 
-    # ---------- Airport schema (Day 9 - Map View) ----------
+
+# ---------- Airport schema (Day 9 - Map View) ----------
 class AirportOut(BaseModel):
     """One airport for the map view."""
     iata_code: str

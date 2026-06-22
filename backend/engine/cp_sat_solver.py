@@ -11,7 +11,9 @@ the genetic algorithm, so GA (heuristic) and CP-SAT (exact) are directly
 comparable: only the search method differs, not the cost model.
 
 CP-SAT is exact for small instances; for large ones it returns the best
-feasible solution found within the time limit.
+feasible solution found within the time limit. The solve status (OPTIMAL vs
+FEASIBLE) is surfaced so callers can tell when the time limit was hit and the
+result is no longer provably optimal.
 """
 import time
 from dataclasses import dataclass
@@ -28,6 +30,7 @@ class CPSATResult:
     best_solution: dict          # flight_id -> tail_number | None
     best_fitness: object         # FitnessBreakdown
     elapsed_seconds: float
+    status: str = "UNKNOWN"      # OPTIMAL | FEASIBLE | INFEASIBLE | ... (solver status)
 
 
 def run_cp_sat(
@@ -123,4 +126,5 @@ def run_cp_sat(
         best_solution=solution,
         best_fitness=fitness,
         elapsed_seconds=elapsed,
+        status=status_name,
     )
