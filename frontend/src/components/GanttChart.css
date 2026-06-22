@@ -106,3 +106,60 @@
   border-radius: 6px !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
+/* --- Multi-day additions --- */
+
+.gantt-wrapper {
+  width: 100%;
+}
+
+/* Overnight (RON) ground block: dim, dashed, visually subordinate to legs. */
+.vis-item.flight-ron {
+  background-color: rgba(136, 135, 128, 0.12);
+  border: 1px dashed rgba(136, 135, 128, 0.55);
+  color: var(--text-secondary, #9a988f);
+  font-size: 10px;
+  font-style: italic;
+  letter-spacing: 0.5px;
+}
+.vis-item.flight-ron .vis-item-content {
+  padding: 0 4px;
+}
+
+/* Alternating day shading so day boundaries read clearly across a week/month. */
+.vis-item.vis-background.day-band-odd {
+  background-color: rgba(255, 255, 255, 0.025);
+}
+.vis-item.vis-background.day-band-even {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Legend under the chart. */
+.gantt-legend {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary, #9a988f);
+}
+.gantt-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+}
+.legend-normal {
+  background-color: #378add;
+}
+.legend-warning {
+  background-color: #e08a3c;
+}
+.legend-ron {
+  background-color: rgba(136, 135, 128, 0.18);
+  border: 1px dashed rgba(136, 135, 128, 0.7);
+}
