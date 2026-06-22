@@ -11,10 +11,33 @@ For each aircraft, we build a feasible rotation by:
 
 This produces feasible-by-construction solutions, which gives the GA
 a much better starting point than pure random assignment.
+
+Reproducibility note
+--------------------
+Candidate lists are sorted into a canonical (departure, flight_id) order
+before the weighted random pick. The pick is order-sensitive
+(random.choices maps a single RNG draw onto a list index), so without a
+canonical order the GA's output would depend on the order edges happen to be
+stored in the connection graph. Sorting makes a given seed fully reproducible
+and independent of how the FCG was built (naive O(n^2) vs bucketed builder).
 """
 
 import random
 from typing import Optional
+
+
+def _sorted_candidates(candidate_ids, flights_by_id):
+    """
+    Returns candidate flight ids in a canonical (departure, flight_id) order.
+
+    This is purely for determinism: the weighted pick downstream is sensitive
+    to list order, so a stable, build-independent ordering keeps the GA
+    reproducible across runs and across different graph builders.
+    """
+    return sorted(
+        candidate_ids,
+        key=lambda fid: (flights_by_id[fid].scheduled_departure, fid),
+    )
 
 
 def build_random_solution(
@@ -49,17 +72,23 @@ def build_random_solution(
         tail = aircraft.tail_number
 
         # --- Pick a starting flight ---
-        # Prefer base-airport flights with the most onward connections
-        base_candidates = [
-            fid for fid, f in flights_by_id.items()
-            if fid not in assigned_flights and f.origin == aircraft.base_airport
-        ]
+        # Prefer base-airport flights with the most onward connections.
+        # Candidate lists are sorted into a canonical order first so the
+        # weighted pick is reproducible regardless of graph build order.
+        base_candidates = _sorted_candidates(
+            [
+                fid for fid, f in flights_by_id.items()
+                if fid not in assigned_flights and f.origin == aircraft.base_airport
+            ],
+            flights_by_id,
+        )
         if base_candidates:
             current_fid = _weighted_pick_by_outdegree(base_candidates, graph)
         else:
-            available = [
-                fid for fid in flights_by_id if fid not in assigned_flights
-            ]
+            available = _sorted_candidates(
+                [fid for fid in flights_by_id if fid not in assigned_flights],
+                flights_by_id,
+            )
             if not available:
                 break
             current_fid = _weighted_pick_by_outdegree(available, graph)
@@ -69,10 +98,13 @@ def build_random_solution(
             solution[current_fid] = tail
             assigned_flights.add(current_fid)
 
-            next_candidates = [
-                nxt for nxt in graph.successors(current_fid)
-                if nxt not in assigned_flights
-            ]
+            next_candidates = _sorted_candidates(
+                [
+                    nxt for nxt in graph.successors(current_fid)
+                    if nxt not in assigned_flights
+                ],
+                flights_by_id,
+            )
             if not next_candidates:
                 current_fid = None
             else:
@@ -89,6 +121,9 @@ def _weighted_pick_by_outdegree(candidates, graph):
     chosen, because continuing the rotation through it is less likely
     to dead-end soon. A small constant (+1) is added so that even
     dead-end flights have a nonzero chance, preserving diversity.
+
+    `candidates` is expected to already be in a canonical order (see
+    _sorted_candidates) so the weighted draw is reproducible.
     """
     weights = [graph.out_degree(fid) + 1 for fid in candidates]
     return random.choices(candidates, weights=weights, k=1)[0]
