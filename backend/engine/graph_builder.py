@@ -68,6 +68,7 @@ def build_flight_connection_graph(
     min_turnaround=DEFAULT_MIN_TURNAROUND,
     max_idle=MAX_IDLE_MINUTES,
     max_overnight=MAX_OVERNIGHT_MINUTES,
+    airport_turnarounds=None,
 ):
     """
     Builds the Flight Connection Graph from a list of Flight objects.
@@ -79,9 +80,18 @@ def build_flight_connection_graph(
         flights: list of Flight ORM objects (must have flight_id, origin,
                  destination, scheduled_departure, scheduled_arrival,
                  distance_km)
-        min_turnaround: minimum ground time required between two flights (min)
+        min_turnaround: fallback minimum ground time between two flights (min),
+                 used for any airport not present in airport_turnarounds.
         max_idle: maximum same-day idle gap to still form a connection (min)
         max_overnight: maximum overnight (RON) gap to still connect (min)
+        airport_turnarounds: optional dict {iata_code: min_turnaround_min}.
+                 The turnaround for an edge A -> B happens at the airport where
+                 the aircraft is on the ground between the two flights, i.e.
+                 A.destination (== B.origin). When provided, each connection
+                 uses that airport's own minimum turnaround; airports missing
+                 from the dict fall back to `min_turnaround`. When None, every
+                 connection uses the single `min_turnaround` value (original
+                 behaviour, kept so script callers need no change).
 
     Returns:
         A networkx.DiGraph where nodes are flight_ids and edges are feasible
@@ -123,8 +133,17 @@ def build_flight_connection_graph(
 
         dep_times = dep_times_by_origin[a.destination]
 
-        # B must depart within [arrival + min_turnaround, arrival + max_overnight].
-        earliest = a.scheduled_arrival + timedelta(minutes=min_turnaround)
+        # The turnaround happens at a.destination (where every candidate B
+        # departs from). Use that airport's own minimum turnaround when known,
+        # otherwise the fallback. One lookup per A suffices because the whole
+        # candidate bucket shares this airport.
+        if airport_turnarounds:
+            turn_min = airport_turnarounds.get(a.destination, min_turnaround)
+        else:
+            turn_min = min_turnaround
+
+        # B must depart within [arrival + turn_min, arrival + max_overnight].
+        earliest = a.scheduled_arrival + timedelta(minutes=turn_min)
         latest = a.scheduled_arrival + timedelta(minutes=max_overnight)
         lo = bisect.bisect_left(dep_times, earliest)
         hi = bisect.bisect_right(dep_times, latest)

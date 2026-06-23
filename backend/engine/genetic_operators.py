@@ -23,6 +23,8 @@ Determinism note:
 import random
 from typing import Optional
 
+from engine.solution import aircraft_can_fly
+
 
 # ---------------------------------------------------------------------------
 # SELECTION
@@ -171,9 +173,16 @@ def _try_extend(solution, graph, flights_by_id, aircraft_list):
         return
     target_fid = random.choice(unassigned)
 
+    target_flight = flights_by_id[target_fid]
     candidates = list(aircraft_list)
     random.shuffle(candidates)
     for aircraft in candidates[:10]:  # try up to 10 aircraft
+        # Skip aircraft that cannot legally operate this flight (availability /
+        # maintenance) before paying for the FCG feasibility check.
+        if not aircraft_can_fly(
+            (aircraft.available_from, aircraft.maintenance_due), target_flight
+        ):
+            continue
         if _is_assignment_feasible(
             solution, target_fid, aircraft.tail_number, graph, flights_by_id
         ):
@@ -191,10 +200,15 @@ def _try_swap(solution, graph, flights_by_id, aircraft_list):
     target_fid = random.choice(assigned)
     current_tail = solution[target_fid]
 
+    target_flight = flights_by_id[target_fid]
     solution[target_fid] = None
     candidates = [a for a in aircraft_list if a.tail_number != current_tail]
     random.shuffle(candidates)
     for aircraft in candidates[:10]:
+        if not aircraft_can_fly(
+            (aircraft.available_from, aircraft.maintenance_due), target_flight
+        ):
+            continue
         if _is_assignment_feasible(
             solution, target_fid, aircraft.tail_number, graph, flights_by_id
         ):

@@ -26,7 +26,7 @@ The baseline is deterministic (fixed flight order, fixed aircraft order),
 so it is perfectly reproducible for the thesis.
 """
 from engine.graph_builder import build_flight_connection_graph
-from engine.solution import evaluate_solution
+from engine.solution import evaluate_solution, build_aircraft_caps, aircraft_can_fly
 from engine.cost_model import fuel_cost_usd
 
 
@@ -46,6 +46,9 @@ def greedy_baseline(flights, aircraft_list, graph) -> dict:
     """
     ordered = sorted(flights, key=lambda f: f.scheduled_departure)
     tails = [a.tail_number for a in aircraft_list]
+    # Availability / maintenance window per tail; the naive dispatcher still may
+    # not assign a flight to an aircraft that cannot legally operate it.
+    caps = build_aircraft_caps(aircraft_list)
 
     # Last flight currently flown by each aircraft (None = still on the ground).
     last_flight = {t: None for t in tails}
@@ -55,18 +58,19 @@ def greedy_baseline(flights, aircraft_list, graph) -> dict:
         fid = f.flight_id
         chosen = None
 
-        # 1) Extend the FIRST aircraft whose last flight connects to this one.
-        #    (Naive: first feasible, NOT the tightest turnaround.)
+        # 1) Extend the FIRST aircraft whose last flight connects to this one
+        #    AND that may legally operate it. (Naive: first feasible, NOT the
+        #    tightest turnaround.)
         for t in tails:
             lf = last_flight[t]
-            if lf is not None and graph.has_edge(lf, fid):
+            if lf is not None and graph.has_edge(lf, fid) and aircraft_can_fly(caps[t], f):
                 chosen = t
                 break
 
-        # 2) Otherwise start the first idle aircraft.
+        # 2) Otherwise start the first idle aircraft that may operate it.
         if chosen is None:
             for t in tails:
-                if last_flight[t] is None:
+                if last_flight[t] is None and aircraft_can_fly(caps[t], f):
                     chosen = t
                     break
 
@@ -78,15 +82,22 @@ def greedy_baseline(flights, aircraft_list, graph) -> dict:
     return solution
 
 
-def compute_baseline_kpis(flights, aircraft_list) -> dict:
+def compute_baseline_kpis(flights, aircraft_list, airport_turnarounds=None) -> dict:
     """
     Build the FCG, run the greedy baseline, and evaluate it with the same
     evaluator the optimizer uses. Returns a KPI dict ready to serialize.
+
+    airport_turnarounds: optional {iata_code: min_turnaround_min} passed through
+    to the graph builder so the baseline respects the same per-airport
+    turnarounds as the optimizer (kept None-safe for script callers).
     """
     flights_by_id = {f.flight_id: f for f in flights}
-    graph = build_flight_connection_graph(flights)
+    graph = build_flight_connection_graph(
+        flights, airport_turnarounds=airport_turnarounds
+    )
     solution = greedy_baseline(flights, aircraft_list, graph)
-    b = evaluate_solution(solution, flights_by_id, graph)
+    caps = build_aircraft_caps(aircraft_list)
+    b = evaluate_solution(solution, flights_by_id, graph, aircraft_caps=caps)
 
     return {
         "algorithm": "greedy_baseline",

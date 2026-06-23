@@ -19,9 +19,10 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+import networkx as nx
 from ortools.sat.python import cp_model
 
-from engine.solution import evaluate_solution
+from engine.solution import evaluate_solution, build_aircraft_caps, aircraft_can_fly
 
 
 @dataclass
@@ -45,6 +46,17 @@ def run_cp_sat(
     flights_by_id = {f.flight_id: f for f in flights}
     flight_ids = list(flights_by_id.keys())
     num_aircraft = len(aircraft_list)
+
+    # Aircraft availability / maintenance capabilities, and the set of tails that
+    # may legally operate each flight. These let the model forbid impossible
+    # coverage up front, and let reconstruction assign each chain only to an
+    # aircraft that can fly all of its flights.
+    tails = [a.tail_number for a in aircraft_list]
+    caps = build_aircraft_caps(aircraft_list)
+    eligible_sets = {
+        fid: {t for t in tails if aircraft_can_fly(caps[t], flights_by_id[fid])}
+        for fid in flight_ids
+    }
 
     model = cp_model.CpModel()
 
@@ -76,6 +88,17 @@ def run_cp_sat(
     # number of chains by one. The DAG has no cycles, so chains are simple paths.
     model.Add(sum(covered.values()) - sum(x.values()) <= num_aircraft)
 
+    # --- Availability / maintenance eligibility ---
+    # A flight no aircraft can legally operate can never be covered.
+    for fid in flight_ids:
+        if not eligible_sets[fid]:
+            model.Add(covered[fid] == 0)
+    # Two flights can only be consecutive on one aircraft if at least one
+    # aircraft can fly BOTH; otherwise the connecting edge is impossible.
+    for (i, j) in edges:
+        if not (eligible_sets[i] & eligible_sets[j]):
+            model.Add(x[(i, j)] == 0)
+
     # --- Objective: coverage primary, idle secondary ---
     BIG = 1_000_000  # large enough that one extra covered flight always wins
     idle_terms = [int(graph.edges[i, j]["idle_minutes"]) * x[(i, j)]
@@ -100,20 +123,48 @@ def run_cp_sat(
                 has_pred.add(j)
         starts = [fid for fid in flight_ids
                   if solver.Value(covered[fid]) == 1 and fid not in has_pred]
-        tails = [a.tail_number for a in aircraft_list]
-        for idx, start_fid in enumerate(starts):
-            if idx >= len(tails):
-                break  # safety; chain constraint should prevent this
-            tail = tails[idx]
+
+        # Walk each chain from its start.
+        chains = []
+        for start_fid in starts:
+            chain = []
             cur = start_fid
             seen = set()
             while cur is not None and cur not in seen:
                 seen.add(cur)
-                solution[cur] = tail
+                chain.append(cur)
                 cur = succ.get(cur)
+            chains.append(chain)
 
-    # KPIs via the SAME evaluator the GA uses -> fair comparison.
-    fitness = evaluate_solution(solution, flights_by_id, graph, weights)
+        # Assign each chain to a DISTINCT aircraft that can fly all of its
+        # flights. A chain's eligible tails are the intersection of its flights'
+        # eligible sets. We solve this as a maximum-weight bipartite matching
+        # (weight = chain length) so covered flights are maximised under the
+        # availability/maintenance constraints. When every aircraft is
+        # interchangeable (no binding caps), every chain is eligible for every
+        # tail and all chains are matched, exactly as before (only the tail
+        # labels, which carry no operational meaning, may differ).
+        match_graph = nx.Graph()
+        for idx, chain in enumerate(chains):
+            chain_eligible = set(tails)
+            for fid in chain:
+                chain_eligible &= eligible_sets[fid]
+                if not chain_eligible:
+                    break
+            for t in chain_eligible:
+                match_graph.add_edge(("chain", idx), ("tail", t), weight=len(chain))
+
+        matching = nx.max_weight_matching(match_graph, maxcardinality=False)
+        for u, v in matching:
+            (chain_idx, tail) = (u[1], v[1]) if u[0] == "chain" else (v[1], u[1])
+            for fid in chains[chain_idx]:
+                solution[fid] = tail
+        # Chains left unmatched (no eligible aircraft available) stay uncovered.
+
+    # KPIs via the SAME evaluator the GA uses -> fair comparison. Passing the
+    # capabilities makes the feasibility flag reflect availability/maintenance
+    # too, consistent with the genetic algorithm.
+    fitness = evaluate_solution(solution, flights_by_id, graph, weights, caps)
     elapsed = time.perf_counter() - start
 
     print(

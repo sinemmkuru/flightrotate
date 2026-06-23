@@ -24,7 +24,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 
 from engine.population import build_initial_population
-from engine.solution import evaluate_solution, FitnessBreakdown, DEFAULT_WEIGHTS
+from engine.solution import (
+    evaluate_solution, FitnessBreakdown, DEFAULT_WEIGHTS, build_aircraft_caps,
+)
 from engine.genetic_operators import tournament_select, crossover, mutate
 
 # -------------------------------------
@@ -99,6 +101,9 @@ def run_genetic_algorithm(
         params = DEFAULT_GA_PARAMS
 
     flights_by_id = {f.flight_id: f for f in flights}
+    # Aircraft availability / maintenance capabilities, built once and reused
+    # for every fitness evaluation below.
+    aircraft_caps = build_aircraft_caps(aircraft_list)
     start_time = time.time()
 
     # --- Step 1: build the initial population ---
@@ -121,7 +126,7 @@ def run_genetic_algorithm(
     for gen in range(params["generations"]):
         # Evaluate fitness for everyone in this generation
         breakdowns = [
-            evaluate_solution(sol, flights_by_id, graph, weights)
+            evaluate_solution(sol, flights_by_id, graph, weights, aircraft_caps)
             for sol in population
         ]
         scores = [b.fitness for b in breakdowns]

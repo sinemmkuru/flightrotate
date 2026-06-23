@@ -29,6 +29,51 @@ from typing import Optional
 from engine.cost_model import flight_fuel_kg, idle_fuel_kg
 
 
+# ---------------------------------------------------------------------------
+# Aircraft availability / maintenance capability
+# ---------------------------------------------------------------------------
+# An aircraft cannot fly a flight that departs before it becomes available, nor
+# one that operates on or after its next scheduled maintenance. These are
+# aircraft-specific constraints, so they cannot live in the (aircraft-agnostic)
+# Flight Connection Graph; instead they are checked wherever a flight is bound
+# to a specific tail. The single rule lives here so every caller (fitness,
+# population seeding, mutation, baseline) stays consistent.
+
+def build_aircraft_caps(aircraft_list) -> dict:
+    """
+    Build a {tail_number: (available_from, maintenance_due)} capability map
+    from a list of Aircraft ORM objects. Computed once and reused so the hot
+    fitness loop does not re-read ORM attributes on every evaluation.
+    """
+    return {
+        a.tail_number: (a.available_from, a.maintenance_due)
+        for a in aircraft_list
+    }
+
+
+def aircraft_can_fly(caps_entry, flight) -> bool:
+    """
+    True if the aircraft described by `caps_entry` (an (available_from,
+    maintenance_due) tuple) may operate `flight`.
+
+    Rules:
+      - available_from: the flight must depart at or after the aircraft is
+        available (flight.scheduled_departure >= available_from).
+      - maintenance_due: the flight must finish before the maintenance day
+        (flight.scheduled_arrival.date() < maintenance_due). A flight that
+        arrives on or after the maintenance date is rejected, because the
+        aircraft is expected to be in the hangar that day.
+
+    A None bound means "no constraint".
+    """
+    available_from, maintenance_due = caps_entry
+    if available_from is not None and flight.scheduled_departure < available_from:
+        return False
+    if maintenance_due is not None and flight.scheduled_arrival.date() >= maintenance_due:
+        return False
+    return True
+
+
 @dataclass
 class FitnessBreakdown:
     """Detailed components of a fitness evaluation (useful for reporting)."""
@@ -63,6 +108,7 @@ def evaluate_solution(
     flights_by_id: dict,
     graph,
     weights: Optional[dict] = None,
+    aircraft_caps: Optional[dict] = None,
 ) -> FitnessBreakdown:
     """
     Computes the fitness of a candidate solution.
@@ -81,6 +127,11 @@ def evaluate_solution(
         graph: the Flight Connection Graph (networkx DiGraph)
         weights: dict with keys 'coverage', 'idle', 'fuel'. Used to weight
                  the efficiency components. Defaults to DEFAULT_WEIGHTS.
+        aircraft_caps: optional {tail: (available_from, maintenance_due)} map
+                 (see build_aircraft_caps). When provided, a rotation that
+                 assigns a flight to an aircraft that cannot legally operate it
+                 (departs before availability, or operates on/after maintenance)
+                 is marked infeasible. When None, no availability check is done.
 
     Returns:
         A FitnessBreakdown describing the solution's quality.
@@ -109,8 +160,13 @@ def evaluate_solution(
     is_feasible = True
 
     for tail, flight_ids in by_aircraft.items():
+        caps_entry = aircraft_caps.get(tail) if aircraft_caps else None
         for i, fid in enumerate(flight_ids):
             flight = flights_by_id[fid]
+            # Aircraft availability / maintenance: a rotation that puts a flight
+            # on a tail that cannot legally operate it is infeasible.
+            if caps_entry is not None and not aircraft_can_fly(caps_entry, flight):
+                is_feasible = False
             total_fuel += flight_fuel_kg(flight.distance_km)
             if i == 0:
                 continue

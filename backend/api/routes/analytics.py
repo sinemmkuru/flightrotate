@@ -304,7 +304,13 @@ def get_baseline(db: Session = Depends(get_db)):
     if not flights or not aircraft_list:
         return {"available": False, "reason": "no flights or aircraft loaded"}
 
-    kpis = compute_baseline_kpis(flights, aircraft_list)
+    from persistence.models import Airport
+    airport_turnarounds = {
+        ap.iata_code: ap.min_turnaround_min
+        for ap in db.query(Airport).filter(Airport.deleted_at.is_(None)).all()
+        if ap.min_turnaround_min is not None
+    }
+    kpis = compute_baseline_kpis(flights, aircraft_list, airport_turnarounds)
     kpis["available"] = True
     return kpis
 
@@ -344,11 +350,19 @@ def disrupt(req: DisruptRequest, db: Session = Depends(get_db)):
     if not flights or not aircraft_list:
         raise HTTPException(status_code=400, detail="No flights or aircraft loaded.")
 
+    from persistence.models import Airport
+    airport_turnarounds = {
+        ap.iata_code: ap.min_turnaround_min
+        for ap in db.query(Airport).filter(Airport.deleted_at.is_(None)).all()
+        if ap.min_turnaround_min is not None
+    }
+
     try:
         return run_disruption(
             flights, aircraft_list,
             dtype=req.type, flight_id=req.flight_id,
             tail_number=req.tail_number, weights=req.weights,
+            airport_turnarounds=airport_turnarounds,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

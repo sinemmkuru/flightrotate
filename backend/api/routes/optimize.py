@@ -105,7 +105,17 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
         )
 
     # --- 4. Build the FCG ---
-    graph = build_flight_connection_graph(flights)
+    # Pass per-airport minimum turnarounds so each connection respects the
+    # turnaround time of the airport where the aircraft is on the ground.
+    from persistence.models import Airport
+    airport_turnarounds = {
+        ap.iata_code: ap.min_turnaround_min
+        for ap in db.query(Airport).filter(Airport.deleted_at.is_(None)).all()
+        if ap.min_turnaround_min is not None
+    }
+    graph = build_flight_connection_graph(
+        flights, airport_turnarounds=airport_turnarounds
+    )
 
     # --- 5. Prepare GA parameters ---
     weights_dict = {

@@ -41,9 +41,11 @@ from engine.cp_sat_solver import run_cp_sat
 from engine.cost_model import fuel_cost_usd
 
 
-def _solve(flights, aircraft_list, weights):
+def _solve(flights, aircraft_list, weights, airport_turnarounds=None):
     """Build the FCG and run CP-SAT; return (solution_dict, FitnessBreakdown)."""
-    graph = build_flight_connection_graph(flights)
+    graph = build_flight_connection_graph(
+        flights, airport_turnarounds=airport_turnarounds
+    )
     result = run_cp_sat(
         flights=flights,
         aircraft_list=aircraft_list,
@@ -221,19 +223,25 @@ def _summary(label, before_bd, after_bd, impact):
 
 
 def run_disruption(flights, aircraft_list, *, dtype,
-                   flight_id=None, tail_number=None, weights=None):
+                   flight_id=None, tail_number=None, weights=None,
+                   airport_turnarounds=None):
     """
     Solve the original schedule, apply the disruption, re-solve, and return a
     before/after impact report. `flights` and `aircraft_list` are live ORM
     objects; they are only read and filtered, never mutated.
+
+    airport_turnarounds: optional {iata_code: min_turnaround_min}; both the
+    before and after solves use it so the delta reflects the disruption only.
     """
     t0 = time.perf_counter()
 
-    before_sol, before_bd = _solve(flights, aircraft_list, weights)
+    before_sol, before_bd = _solve(flights, aircraft_list, weights,
+                                   airport_turnarounds)
     label, dis_flights, dis_aircraft = _apply(
         flights, aircraft_list, dtype, flight_id, tail_number
     )
-    after_sol, after_bd = _solve(dis_flights, dis_aircraft, weights)
+    after_sol, after_bd = _solve(dis_flights, dis_aircraft, weights,
+                                 airport_turnarounds)
 
     impact = _impact(flights, before_sol, after_sol, dtype, flight_id)
     summary = _summary(label, before_bd, after_bd, impact)

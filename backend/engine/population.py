@@ -25,6 +25,8 @@ and independent of how the FCG was built (naive O(n^2) vs bucketed builder).
 import random
 from typing import Optional
 
+from engine.solution import aircraft_can_fly
+
 
 def _sorted_candidates(candidate_ids, flights_by_id):
     """
@@ -70,6 +72,9 @@ def build_random_solution(
 
     for aircraft in aircraft_order:
         tail = aircraft.tail_number
+        # This aircraft's availability / maintenance window. Only flights it can
+        # legally operate are eligible for its rotation.
+        caps_entry = (aircraft.available_from, aircraft.maintenance_due)
 
         # --- Pick a starting flight ---
         # Prefer base-airport flights with the most onward connections.
@@ -79,6 +84,7 @@ def build_random_solution(
             [
                 fid for fid, f in flights_by_id.items()
                 if fid not in assigned_flights and f.origin == aircraft.base_airport
+                and aircraft_can_fly(caps_entry, f)
             ],
             flights_by_id,
         )
@@ -86,11 +92,17 @@ def build_random_solution(
             current_fid = _weighted_pick_by_outdegree(base_candidates, graph)
         else:
             available = _sorted_candidates(
-                [fid for fid in flights_by_id if fid not in assigned_flights],
+                [
+                    fid for fid in flights_by_id
+                    if fid not in assigned_flights
+                    and aircraft_can_fly(caps_entry, flights_by_id[fid])
+                ],
                 flights_by_id,
             )
             if not available:
-                break
+                # Nothing left that THIS aircraft may fly; another aircraft may
+                # still be able to, so move on rather than ending construction.
+                continue
             current_fid = _weighted_pick_by_outdegree(available, graph)
 
         # --- Extend the rotation, preferring high-connectivity successors ---
@@ -102,6 +114,7 @@ def build_random_solution(
                 [
                     nxt for nxt in graph.successors(current_fid)
                     if nxt not in assigned_flights
+                    and aircraft_can_fly(caps_entry, flights_by_id[nxt])
                 ],
                 flights_by_id,
             )
