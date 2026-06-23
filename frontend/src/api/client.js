@@ -128,3 +128,27 @@ export async function getFleetAirports() {
   const res = await client.get("/fleet/airports");
   return res.data;
 }
+export async function createAircraft(body) {
+  const res = await client.post("/fleet/aircraft", body);
+  return res.data;
+}
+export async function updateAircraft(tail, body) {
+  const res = await client.put(`/fleet/aircraft/${tail}`, body);
+  return res.data;
+}
+export async function deleteAircraft(tail) {
+  const res = await client.delete(`/fleet/aircraft/${tail}`);
+  return res.data;
+}
+export async function createAirport(body) {
+  const res = await client.post("/fleet/airports", body);
+  return res.data;
+}
+export async function updateAirport(code, body) {
+  const res = await client.put(`/fleet/airports/${code}`, body);
+  return res.data;
+}
+export async function deleteAirport(code) {
+  const res = await client.delete(`/fleet/airports/${code}`);
+  return res.data;
+}
