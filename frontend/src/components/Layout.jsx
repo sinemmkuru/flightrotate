@@ -17,6 +17,8 @@ const NAV_ITEMS = [
   { path: "/map", label: "Map", icon: "🗺️" },
   { path: "/disruption", label: "Disruption", icon: "🔄" },
   { path: "/history", label: "History", icon: "🕘" },
+  { path: "/fleet", label: "Fleet", icon: "✈️" },
+  { path: "/airports", label: "Airports", icon: "🛫" },
 ];
 
 function Layout({ children }) {

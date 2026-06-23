@@ -119,3 +119,12 @@ export async function disrupt(body) {
   const { data } = await client.post("/disrupt", body);
   return data;
 }
+// --- Fleet endpoints ---
+export async function getFleetAircraft() {
+  const res = await client.get("/fleet/aircraft");
+  return res.data;
+}
+export async function getFleetAirports() {
+  const res = await client.get("/fleet/airports");
+  return res.data;
+}

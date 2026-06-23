@@ -15,6 +15,8 @@ import Compare from "./pages/Compare";
 import MapView from "./pages/MapView";
 import Disruption from "./pages/Disruption";
 import History from "./pages/History";
+import Fleet from "./pages/Fleet";
+import Airports from "./pages/Airports";
 
 import "./App.css";
 
@@ -32,6 +34,8 @@ function App() {
           <Route path="/compare" element={<Compare />} />
           <Route path="/map" element={<MapView />} />
           <Route path="/disruption" element={<Disruption />} />
+          <Route path="/fleet" element={<Fleet />} />
+          <Route path="/airports" element={<Airports />} />
         </Routes>
       </Layout>
     </BrowserRouter>

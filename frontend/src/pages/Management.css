@@ -1,0 +1,147 @@
+/*
+Shared styles for the read-only management pages (Fleet, Airports).
+Sortable table on the dark theme, reusing the app's CSS variables with
+safe fallbacks. Status/operational badges are generic and reused by both.
+*/
+.mgmt {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mgmt .page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mgmt-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary, #9a988f);
+  margin: 2px 0 0;
+}
+
+.mgmt .error-banner {
+  border: 1px solid #c0392b;
+  color: #e07a6e;
+  background: rgba(192, 57, 43, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.mgmt-empty {
+  border: 1px solid var(--border-color, #2a2a2a);
+  border-radius: 10px;
+  padding: 28px;
+  text-align: center;
+  color: var(--text-secondary, #9a988f);
+  font-size: 14px;
+  background: var(--bg-secondary, #16161a);
+}
+
+.mgmt-table-wrap {
+  border: 1px solid var(--border-color, #2a2a2a);
+  border-radius: 10px;
+  overflow: auto;
+  max-height: 72vh;
+  background: var(--bg-secondary, #16161a);
+}
+
+.mgmt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.mgmt-table th,
+.mgmt-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mgmt-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-tertiary, #1f1f25);
+  color: var(--text-secondary, #9a988f);
+  font-weight: 600;
+  z-index: 1;
+}
+
+.mgmt-table th.num,
+.mgmt-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mgmt-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.mgmt-table th.sortable:hover {
+  color: var(--text-primary, #eee);
+}
+
+.mgmt-table th.sorted {
+  color: var(--accent-blue, #378add);
+}
+
+.mgmt-table td {
+  color: var(--text-primary, #e8e6df);
+}
+
+.mgmt-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mgmt-table code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+/* Generic status badges */
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 10px;
+  letter-spacing: 0.3px;
+  display: inline-block;
+}
+.badge-green {
+  background: rgba(95, 184, 120, 0.18);
+  color: #7fd49a;
+}
+.badge-orange {
+  background: rgba(224, 169, 85, 0.18);
+  color: #e0a955;
+}
+.badge-red {
+  background: rgba(224, 122, 110, 0.18);
+  color: #e07a6e;
+}
+.badge-grey {
+  background: rgba(136, 135, 128, 0.18);
+  color: #b9b7af;
+}
+
+/* Maintenance-due emphasis */
+.due-soon {
+  color: #e0a955;
+}
+.due-over {
+  color: #e07a6e;
+  font-weight: 600;
+}
+
+.mgmt-hint {
+  font-size: 12px;
+  color: var(--text-secondary, #9a988f);
+  margin: 0;
+}

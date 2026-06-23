@@ -17,7 +17,7 @@ Interactive API docs are then available at:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import upload, optimize, analytics, export
+from api.routes import upload, optimize, analytics, export, fleet
 
 
 app = FastAPI(
@@ -46,7 +46,7 @@ app.include_router(upload.router, prefix="/api", tags=["upload"])
 app.include_router(optimize.router, prefix="/api", tags=["optimize"])
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 app.include_router(export.router, prefix="/api", tags=["export"])
-
+app.include_router(fleet.router, prefix="/api", tags=["fleet"])
 
 @app.get("/")
 def root():
