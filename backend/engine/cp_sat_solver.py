@@ -22,7 +22,11 @@ from typing import Optional
 import networkx as nx
 from ortools.sat.python import cp_model
 
-from engine.solution import evaluate_solution, build_aircraft_caps, aircraft_can_fly
+from engine.solution import (
+    evaluate_solution, build_aircraft_caps, aircraft_can_fly,
+    DEFAULT_WEIGHTS, IDLE_PER_FLIGHT_REFERENCE, FUEL_PER_FLIGHT_REFERENCE,
+)
+from engine.cost_model import flight_fuel_kg, idle_fuel_kg
 
 
 @dataclass
@@ -99,11 +103,48 @@ def run_cp_sat(
         if not (eligible_sets[i] & eligible_sets[j]):
             model.Add(x[(i, j)] == 0)
 
-    # --- Objective: coverage primary, idle secondary ---
-    BIG = 1_000_000  # large enough that one extra covered flight always wins
-    idle_terms = [int(graph.edges[i, j]["idle_minutes"]) * x[(i, j)]
-                  for (i, j) in edges]
-    model.Maximize(BIG * sum(covered.values()) - sum(idle_terms))
+    # --- Objective: coverage primary, weighted idle + fuel secondary ---
+    # Coverage is the primary (lexicographic) goal: COVERAGE_REWARD is far larger
+    # than any achievable secondary cost, so the solver always covers as many
+    # flights as it can first. This matches the business priority and the genetic
+    # algorithm's strong coverage lean, and rules out the degenerate "cover few
+    # flights to minimise totals" solution.
+    #
+    # The secondary objective now honours the user's idle AND fuel weights (fuel
+    # was previously ignored), normalised per flight against the same references
+    # the GA uses (engine.solution), so the two solvers optimise comparable
+    # objectives. Each covered flight carries its cruise/segment fuel; each chosen
+    # connection carries its idle time plus the APU fuel burned while idle. Where
+    # not all flights can be covered, the fuel weight therefore also decides which
+    # flights to drop (higher-fuel ones first). Coefficients are integer-scaled
+    # because CP-SAT requires an integer objective.
+    w = weights or DEFAULT_WEIGHTS
+    w_idle = w.get("idle", DEFAULT_WEIGHTS["idle"])
+    w_fuel = w.get("fuel", DEFAULT_WEIGHTS["fuel"])
+    SCALE = 1000
+    COVERAGE_REWARD = SCALE * 100_000  # dominates any secondary cost
+
+    def _cover_cost(dist_km):
+        # Cruise/segment fuel of operating this flight, weighted and normalised.
+        return int(round(
+            w_fuel * SCALE * flight_fuel_kg(dist_km) / FUEL_PER_FLIGHT_REFERENCE
+        ))
+
+    def _edge_cost(idle_min):
+        # Idle time and the APU fuel burned during it, each weighted/normalised.
+        idle_term = w_idle * SCALE * idle_min / IDLE_PER_FLIGHT_REFERENCE
+        apu_term = w_fuel * SCALE * idle_fuel_kg(idle_min) / FUEL_PER_FLIGHT_REFERENCE
+        return int(round(idle_term + apu_term))
+
+    cover_terms = [
+        (COVERAGE_REWARD - _cover_cost(flights_by_id[fid].distance_km or 0)) * covered[fid]
+        for fid in flight_ids
+    ]
+    secondary_terms = [
+        _edge_cost(graph.edges[i, j]["idle_minutes"]) * x[(i, j)]
+        for (i, j) in edges
+    ]
+    model.Maximize(sum(cover_terms) - sum(secondary_terms))
 
     # --- Solve ---
     solver = cp_model.CpSolver()
