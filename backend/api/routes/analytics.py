@@ -321,20 +321,22 @@ from typing import Optional as _Optional
 
 
 class DisruptRequest(BaseModel):
-    type: str                              # "ground_aircraft" | "cancel"
-    flight_id: _Optional[str] = None       # required for "cancel"
+    type: str                              # "ground_aircraft" | "cancel" | "delay"
+    flight_id: _Optional[str] = None       # required for "cancel" and "delay"
     tail_number: _Optional[str] = None     # required for "ground_aircraft"
+    delay_minutes: _Optional[int] = None   # required for "delay"
     weights: _Optional[dict] = None
 
 
 @router.post("/disrupt")
 def disrupt(req: DisruptRequest, db: Session = Depends(get_db)):
     """
-    Apply a disruption (aircraft AOG or flight cancellation), re-optimize with
-    CP-SAT, and return a before/after impact report. Reads the live schedule
-    but never mutates the database.
+    Apply a disruption (aircraft AOG, flight cancellation, or flight delay),
+    re-optimize with CP-SAT, and return a before/after impact report. Reads the
+    live schedule but never mutates the database. A "delay" also reports the
+    reactionary delay that would cascade if the current plan were flown as-is.
     """
-    from persistence.models import Flight, Aircraft
+    from persistence.models import Flight, Aircraft, OptimizationRun, Assignment
     from engine.disruption import run_disruption
 
     flights = (
@@ -357,12 +359,32 @@ def disrupt(req: DisruptRequest, db: Session = Depends(get_db)):
         if ap.min_turnaround_min is not None
     }
 
+    # For a delay we propagate along the plan the user is actually operating:
+    # the latest optimization run's assignment. (No run yet -> run_disruption
+    # falls back to a fresh solve.)
+    plan_solution = None
+    if req.type == "delay":
+        latest = (
+            db.query(OptimizationRun)
+            .filter(OptimizationRun.deleted_at.is_(None))
+            .order_by(OptimizationRun.created_at.desc())
+            .first()
+        )
+        if latest is not None:
+            rows = (
+                db.query(Assignment)
+                .filter(Assignment.run_id == latest.run_id)
+                .all()
+            )
+            plan_solution = {a.flight_id: a.tail_number for a in rows}
+
     try:
         return run_disruption(
             flights, aircraft_list,
             dtype=req.type, flight_id=req.flight_id,
             tail_number=req.tail_number, weights=req.weights,
             airport_turnarounds=airport_turnarounds,
+            delay_minutes=req.delay_minutes, plan_solution=plan_solution,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -35,10 +35,14 @@ Pure tail relabelling (same chain, different label) is correctly reported as
 "unchanged". This keeps the impact numbers honest.
 """
 import time
+from datetime import timedelta
+from types import SimpleNamespace
 
 from engine.graph_builder import build_flight_connection_graph
 from engine.cp_sat_solver import run_cp_sat
 from engine.cost_model import fuel_cost_usd
+from engine.solution import evaluate_solution, build_aircraft_caps
+from engine.delay import propagate_delay
 
 
 def _solve(flights, aircraft_list, weights, airport_turnarounds=None):
@@ -222,9 +226,125 @@ def _summary(label, before_bd, after_bd, impact):
     return " ".join(parts)
 
 
+def _shift_copy(flight, minutes):
+    """A read-only stand-in for `flight` shifted later by `minutes` (no mutation)."""
+    delta = timedelta(minutes=minutes)
+    return SimpleNamespace(
+        flight_id=flight.flight_id,
+        flight_number=getattr(flight, "flight_number", flight.flight_id),
+        origin=flight.origin,
+        destination=flight.destination,
+        scheduled_departure=flight.scheduled_departure + delta,
+        scheduled_arrival=flight.scheduled_arrival + delta,
+        distance_km=flight.distance_km,
+        status=getattr(flight, "status", "scheduled"),
+    )
+
+
+def _delay_summary(label, prop, plan_bd, rec_bd, impact):
+    """Narrate the do-nothing cascade vs the recovered (re-optimized) plan."""
+    parts = [f"{label}."]
+    if prop["knock_on_count"] == 0:
+        parts.append("Schedule slack absorbs it entirely: no downstream flight "
+                     "is delayed.")
+    else:
+        parts.append(
+            f"If the plan is flown as-is, the delay cascades to "
+            f"{prop['knock_on_count']} downstream flight(s) for "
+            f"{prop['total_reactionary_delay_min']} min of reactionary delay "
+            f"(worst single delay {prop['max_delay_min']} min)."
+        )
+
+    cov_plan = plan_bd.coverage * 100.0
+    cov_rec = rec_bd.coverage * 100.0
+    dpp = cov_rec - cov_plan
+    moved = impact["flights_moved"]
+    dropped = impact["flights_dropped"]
+    added = impact["flights_added"]
+
+    if prop["knock_on_count"] == 0:
+        parts.append("No recovery action is needed.")
+    else:
+        rec = "Re-optimizing around the delay contains the knock-on to the delayed flight"
+        if moved:
+            rec += f", re-sequencing {moved} flight(s)"
+        parts.append(rec + ".")
+        if abs(dpp) < 0.05:
+            sentence = f"Coverage holds at {cov_rec:.1f}%"
+            if dropped and added:
+                sentence += (f", though the covered set shifts ({dropped} dropped, "
+                             f"{added} picked up)")
+            parts.append(sentence + ".")
+        elif dpp < 0:
+            parts.append(f"Coverage falls {abs(dpp):.1f} pp ({cov_plan:.1f}% -> "
+                         f"{cov_rec:.1f}%): {dropped} flight(s) could not be "
+                         f"re-accommodated.")
+        else:
+            parts.append(f"Coverage rises {dpp:.1f} pp ({cov_plan:.1f}% -> "
+                         f"{cov_rec:.1f}%).")
+    return " ".join(parts)
+
+
+def _run_delay(flights, aircraft_list, *, flight_id, delay_minutes, weights,
+               airport_turnarounds, plan_solution):
+    """
+    Delay a flight and report (1) the reactionary delay if the plan is flown
+    as-is, and (2) the recovered plan after re-optimizing around the new time.
+    """
+    t0 = time.perf_counter()
+    fbi = {f.flight_id: f for f in flights}
+    if flight_id not in fbi:
+        raise ValueError(f"Unknown flight_id: {flight_id}")
+    if not delay_minutes or delay_minutes <= 0:
+        raise ValueError("delay_minutes must be a positive number of minutes")
+
+    # Operating plan: the latest run's assignment if supplied, else a fresh solve.
+    if plan_solution is None:
+        plan_solution, _ = _solve(flights, aircraft_list, weights, airport_turnarounds)
+    plan_solution = {f.flight_id: plan_solution.get(f.flight_id) for f in flights}
+    if plan_solution.get(flight_id) is None:
+        raise ValueError(
+            f"Flight {flight_id} is not in the current operating plan; "
+            "cannot delay it."
+        )
+
+    graph = build_flight_connection_graph(flights, airport_turnarounds=airport_turnarounds)
+    caps = build_aircraft_caps(aircraft_list)
+    plan_bd = evaluate_solution(plan_solution, fbi, graph, weights, caps)
+
+    # Lens 1 - do nothing: propagate the delay along the existing rotations.
+    prop = propagate_delay(plan_solution, fbi, flight_id, delay_minutes,
+                           airport_turnarounds)
+
+    # Lens 2 - recover: shift the flight to its delayed time, rebuild and re-solve.
+    shifted = [_shift_copy(f, delay_minutes) if f.flight_id == flight_id else f
+               for f in flights]
+    rec_sol, rec_bd = _solve(shifted, aircraft_list, weights, airport_turnarounds)
+
+    impact = _impact(flights, plan_solution, rec_sol, "delay", flight_id)
+    label = (f"Delayed flight {fbi[flight_id].flight_number} "
+             f"by {delay_minutes} min")
+    summary = _delay_summary(label, prop, plan_bd, rec_bd, impact)
+
+    return {
+        "disruption": {
+            "type": "delay", "label": label,
+            "flight_id": flight_id, "delay_minutes": delay_minutes,
+        },
+        "algorithm": "cp_sat",
+        "delay_propagation": prop,
+        "before": _kpi(plan_bd),   # the plan as flown (do-nothing)
+        "after": _kpi(rec_bd),     # the recovered, re-optimized plan
+        "impact": impact,
+        "summary": summary,
+        "elapsed_seconds": round(time.perf_counter() - t0, 2),
+    }
+
+
 def run_disruption(flights, aircraft_list, *, dtype,
                    flight_id=None, tail_number=None, weights=None,
-                   airport_turnarounds=None):
+                   airport_turnarounds=None, delay_minutes=None,
+                   plan_solution=None):
     """
     Solve the original schedule, apply the disruption, re-solve, and return a
     before/after impact report. `flights` and `aircraft_list` are live ORM
@@ -232,7 +352,18 @@ def run_disruption(flights, aircraft_list, *, dtype,
 
     airport_turnarounds: optional {iata_code: min_turnaround_min}; both the
     before and after solves use it so the delta reflects the disruption only.
+
+    For dtype == "delay", flight_id is delayed by delay_minutes and the report
+    contrasts letting the delay propagate along plan_solution (the operating
+    plan) with re-optimizing around it. The cancel/ground paths are unchanged.
     """
+    if dtype == "delay":
+        return _run_delay(
+            flights, aircraft_list, flight_id=flight_id,
+            delay_minutes=delay_minutes, weights=weights,
+            airport_turnarounds=airport_turnarounds, plan_solution=plan_solution,
+        )
+
     t0 = time.perf_counter()
 
     before_sol, before_bd = _solve(flights, aircraft_list, weights,

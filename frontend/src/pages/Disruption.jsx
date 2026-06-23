@@ -29,6 +29,7 @@ function Disruption() {
   const [dtype, setDtype] = useState("ground_aircraft");
   const [tail, setTail] = useState("");
   const [flightId, setFlightId] = useState("");
+  const [delayMinutes, setDelayMinutes] = useState(60);
 
   const [result, setResult] = useState(null);
   const [running, setRunning] = useState(false);
@@ -81,10 +82,18 @@ function Disruption() {
     setError(null);
     setResult(null);
     try {
-      const body =
-        dtype === "ground_aircraft"
-          ? { type: "ground_aircraft", tail_number: tail }
-          : { type: "cancel", flight_id: flightId };
+      let body;
+      if (dtype === "ground_aircraft") {
+        body = { type: "ground_aircraft", tail_number: tail };
+      } else if (dtype === "cancel") {
+        body = { type: "cancel", flight_id: flightId };
+      } else {
+        body = {
+          type: "delay",
+          flight_id: flightId,
+          delay_minutes: Number(delayMinutes),
+        };
+      }
       const data = await disrupt(body);
       setResult(data);
     } catch (e) {
@@ -134,9 +143,15 @@ function Disruption() {
               >
                 Cancel flight
               </button>
+              <button
+                className={`seg-btn ${dtype === "delay" ? "seg-active" : ""}`}
+                onClick={() => setDtype("delay")}
+              >
+                Delay flight
+              </button>
             </div>
 
-            {dtype === "ground_aircraft" ? (
+            {dtype === "ground_aircraft" && (
               <div className="picker">
                 <label>Aircraft to ground</label>
                 <select value={tail} onChange={(e) => setTail(e.target.value)}>
@@ -147,9 +162,11 @@ function Disruption() {
                   ))}
                 </select>
               </div>
-            ) : (
+            )}
+
+            {(dtype === "cancel" || dtype === "delay") && (
               <div className="picker">
-                <label>Flight to cancel</label>
+                <label>{dtype === "delay" ? "Flight to delay" : "Flight to cancel"}</label>
                 <select
                   value={flightId}
                   onChange={(e) => setFlightId(e.target.value)}
@@ -164,11 +181,28 @@ function Disruption() {
               </div>
             )}
 
+            {dtype === "delay" && (
+              <div className="picker">
+                <label>Delay (minutes)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="5"
+                  value={delayMinutes}
+                  onChange={(e) => setDelayMinutes(e.target.value)}
+                />
+              </div>
+            )}
+
             <button
               className="btn btn-primary"
               onClick={handleSimulate}
               disabled={
-                running || (dtype === "ground_aircraft" ? !tail : !flightId)
+                running ||
+                (dtype === "ground_aircraft"
+                  ? !tail
+                  : !flightId) ||
+                (dtype === "delay" && !(Number(delayMinutes) > 0))
               }
             >
               {running ? "Simulating..." : "Simulate disruption"}
@@ -184,6 +218,60 @@ function Disruption() {
                 <span className="summary-icon">⚠️</span>
                 <p className="summary-text">{result.summary}</p>
               </section>
+
+              {result.delay_propagation && (
+                <section className="card">
+                  <h3 className="section-title">
+                    Reactionary delay (if the plan is flown as-is)
+                  </h3>
+                  <div className="impact-chips">
+                    <Chip
+                      n={result.delay_propagation.flights_delayed}
+                      label="flights delayed"
+                      cls="ic-moved"
+                    />
+                    <Chip
+                      n={result.delay_propagation.total_reactionary_delay_min}
+                      label="min knock-on delay"
+                      cls="ic-dropped"
+                    />
+                    <Chip
+                      n={result.delay_propagation.max_delay_min}
+                      label="min worst single delay"
+                      cls="ic-cancelled"
+                    />
+                  </div>
+                  <table className="affected-table">
+                    <thead>
+                      <tr>
+                        <th>Flight</th>
+                        <th>Route</th>
+                        <th>Scheduled</th>
+                        <th>Actual</th>
+                        <th>Delay</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.delay_propagation.affected.map((r) => (
+                        <tr key={r.flight_id}>
+                          <td>{r.flight_number}</td>
+                          <td>{r.route.replace("->", " → ")}</td>
+                          <td>{fmtTime(r.scheduled_departure)}</td>
+                          <td>{fmtTime(r.actual_departure)}</td>
+                          <td>+{r.delay_minutes} min</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="ba-note">
+                    Each aircraft keeps its planned rotation; the delay ripples
+                    down its later legs, absorbed by turnaround slack. The
+                    Before/After table below contrasts flying this plan as-is
+                    with re-optimizing (tail swaps) around the new departure
+                    time.
+                  </p>
+                </section>
+              )}
 
               <section className="card">
                 <h3 className="section-title">Before vs after</h3>
