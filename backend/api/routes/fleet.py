@@ -26,7 +26,9 @@ Design notes:
   - Self-contained: does not touch analytics.py, the shared optimization
     schemas, or the existing GET /api/airports used by the Map view.
 """
+import csv
 from datetime import datetime, date, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,6 +41,13 @@ from persistence.models import Aircraft, Airport, Flight
 router = APIRouter()
 
 VALID_STATUSES = {"active", "maintenance", "grounded"}
+
+# OpenFlights reference data (~7,700 airports worldwide), shipped in the repo.
+# fleet.py is at backend/api/routes/, so the backend root is three levels up.
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+_AIRPORTS_DAT = _BACKEND_DIR / "persistence" / "airports.dat"
+_OF_NA = "\\N"  # OpenFlights missing-value marker
+_airport_index: Optional[dict] = None  # lazy IATA -> reference record cache
 
 
 # --------------------------------------------------------------------------
@@ -101,6 +110,16 @@ class AirportUpdate(BaseModel):
     longitude: Optional[float] = None
     min_turnaround_min: Optional[int] = None
     is_operational: Optional[bool] = None
+
+
+class AirportLookup(BaseModel):
+    """Reference data for an IATA code, looked up from OpenFlights (read-only)."""
+    iata_code: str
+    icao_code: Optional[str] = None
+    name: Optional[str] = None
+    city: Optional[str] = None
+    latitude: float
+    longitude: float
 
 
 # --------------------------------------------------------------------------
@@ -259,6 +278,77 @@ def delete_aircraft(tail: str, db: Session = Depends(get_db)):
     ac.deleted_at = _utcnow()
     db.commit()
     return {"ok": True, "tail_number": tail, "deleted": True}
+
+
+# --------------------------------------------------------------------------
+# Airports - reference lookup (OpenFlights), for IATA auto-fill
+# --------------------------------------------------------------------------
+def _clean_of(value: Optional[str]) -> Optional[str]:
+    v = (value or "").strip()
+    return None if v == "" or v == _OF_NA else v
+
+
+def _load_airport_index() -> dict:
+    """
+    Build (once, then cache) an IATA -> reference-record index from the
+    OpenFlights airports.dat shipped in the repo. Columns (no header):
+    id, name, city, country, iata, icao, lat, lon, ...; '\\N' marks missing.
+    """
+    global _airport_index
+    if _airport_index is not None:
+        return _airport_index
+
+    index: dict = {}
+    with open(_AIRPORTS_DAT, newline="", encoding="utf-8") as f:
+        for row in csv.reader(f):
+            if len(row) < 8:
+                continue
+            iata = (row[4] or "").strip()
+            if not iata or iata == _OF_NA or len(iata) != 3:
+                continue
+            try:
+                lat = float(row[6])
+                lon = float(row[7])
+            except (ValueError, IndexError):
+                continue
+            index[iata.upper()] = {
+                "iata_code": iata.upper(),
+                "icao_code": _clean_of(row[5]),
+                "name": _clean_of(row[1]),
+                "city": _clean_of(row[2]),
+                "latitude": lat,
+                "longitude": lon,
+            }
+    _airport_index = index
+    return _airport_index
+
+
+@router.get("/fleet/airport-lookup/{iata}", response_model=AirportLookup)
+def airport_lookup(iata: str):
+    """
+    Look up an IATA code in the OpenFlights reference data and return its
+    name, city, coordinates, and ICAO code, so the Add-airport form can
+    auto-fill. Read-only; does not touch the database.
+    """
+    code = (iata or "").strip().upper()
+    if len(code) != 3:
+        raise HTTPException(status_code=400, detail="IATA code must be 3 letters")
+    try:
+        index = _load_airport_index()
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Reference data not found (persistence/airports.dat). "
+                "Download it from OpenFlights into backend/persistence/."
+            ),
+        )
+    rec = index.get(code)
+    if rec is None:
+        raise HTTPException(
+            status_code=404, detail=f"IATA '{code}' not found in reference data"
+        )
+    return AirportLookup(**rec)
 
 
 # --------------------------------------------------------------------------

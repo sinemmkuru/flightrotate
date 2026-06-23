@@ -265,3 +265,22 @@ reusing the app's CSS variables with safe fallbacks.
   gap: 8px;
   margin-top: 8px;
 }
+
+/* IATA lookup row (input + Look up button) on the airport form */
+.iata-row {
+  display: flex;
+  gap: 8px;
+}
+.iata-row input {
+  flex: 1;
+  min-width: 0;
+}
+.iata-row .mgmt-btn {
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.lookup-note {
+  font-size: 12px;
+  color: var(--text-secondary, #9a988f);
+  margin: -4px 0 12px;
+}

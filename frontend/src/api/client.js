@@ -152,3 +152,7 @@ export async function deleteAirport(code) {
   const res = await client.delete(`/fleet/airports/${code}`);
   return res.data;
 }
+export async function getAirportLookup(iata) {
+  const res = await client.get(`/fleet/airport-lookup/${iata}`);
+  return res.data;
+}

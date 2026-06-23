@@ -12,6 +12,7 @@ import {
   createAirport,
   updateAirport,
   deleteAirport,
+  getAirportLookup,
 } from "../api/client";
 import "./Management.css";
 
@@ -42,6 +43,8 @@ function Airports() {
   const [draft, setDraft] = useState(emptyDraft());
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [lookupNote, setLookupNote] = useState(null);
+  const [lookingUp, setLookingUp] = useState(false);
 
   useEffect(() => {
     load();
@@ -109,6 +112,7 @@ function Airports() {
   function openAdd() {
     setDraft(emptyDraft());
     setFormError(null);
+    setLookupNote(null);
     setModal({ open: true, mode: "add" });
   }
 
@@ -124,6 +128,7 @@ function Airports() {
       is_operational: !!a.is_operational,
     });
     setFormError(null);
+    setLookupNote(null);
     setModal({ open: true, mode: "edit" });
   }
 
@@ -134,6 +139,36 @@ function Airports() {
 
   function setField(k, v) {
     setDraft((d) => ({ ...d, [k]: v }));
+  }
+
+  // Auto-fill name/city/coords/ICAO from the OpenFlights reference data.
+  async function lookupIata() {
+    const code = (draft.iata_code || "").trim().toUpperCase();
+    if (code.length !== 3) {
+      setLookupNote("Enter a 3-letter IATA code first.");
+      return;
+    }
+    try {
+      setLookingUp(true);
+      setLookupNote(null);
+      const rec = await getAirportLookup(code);
+      setDraft((d) => ({
+        ...d,
+        iata_code: rec.iata_code,
+        icao_code: rec.icao_code || "",
+        name: rec.name || d.name,
+        city: rec.city || d.city,
+        latitude: rec.latitude,
+        longitude: rec.longitude,
+      }));
+      setLookupNote(`Filled from reference: ${rec.name || code}`);
+    } catch (e) {
+      setLookupNote(
+        errDetail(e, "IATA not found in reference data; enter manually."),
+      );
+    } finally {
+      setLookingUp(false);
+    }
   }
 
   async function save() {
@@ -313,13 +348,33 @@ function Airports() {
             <div className="form-grid2">
               <div className="form-row">
                 <label>IATA code</label>
-                <input
-                  type="text"
-                  value={draft.iata_code}
-                  disabled={modal.mode === "edit"}
-                  placeholder="IST"
-                  onChange={(e) => setField("iata_code", e.target.value)}
-                />
+                <div className="iata-row">
+                  <input
+                    type="text"
+                    value={draft.iata_code}
+                    disabled={modal.mode === "edit"}
+                    placeholder="IST"
+                    onChange={(e) => setField("iata_code", e.target.value)}
+                    onBlur={() => {
+                      if (
+                        modal.mode === "add" &&
+                        (draft.iata_code || "").trim().length === 3
+                      ) {
+                        lookupIata();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="mgmt-btn"
+                    onClick={lookupIata}
+                    disabled={
+                      lookingUp || (draft.iata_code || "").trim().length !== 3
+                    }
+                  >
+                    {lookingUp ? "…" : "Look up"}
+                  </button>
+                </div>
               </div>
               <div className="form-row">
                 <label>ICAO code</label>
@@ -331,6 +386,7 @@ function Airports() {
                 />
               </div>
             </div>
+            {lookupNote && <div className="lookup-note">{lookupNote}</div>}
             <div className="form-row">
               <label>Name</label>
               <input
