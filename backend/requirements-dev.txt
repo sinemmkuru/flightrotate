@@ -1,0 +1,4 @@
+# Development/test-only dependencies (not needed to run the API).
+# Install with:  pip install -r requirements-dev.txt
+# Run the engine test suite from the backend folder with:  pytest
+pytest==9.1.1

@@ -202,6 +202,13 @@ def _try_swap(solution, graph, flights_by_id, aircraft_list):
 
     target_flight = flights_by_id[target_fid]
     solution[target_fid] = None
+    # Pulling a flight out of the MIDDLE of its old rotation can leave the two
+    # halves no longer connectable (e.g. A->B->C becomes A,C with no A->C edge).
+    # If removing it breaks the source rotation, this move is infeasible: undo
+    # it and bail rather than leaving an invalid solution behind.
+    if not _rotation_feasible(solution, current_tail, graph, flights_by_id):
+        solution[target_fid] = current_tail
+        return
     candidates = [a for a in aircraft_list if a.tail_number != current_tail]
     random.shuffle(candidates)
     for aircraft in candidates[:10]:
@@ -216,6 +223,21 @@ def _try_swap(solution, graph, flights_by_id, aircraft_list):
             return
 
     solution[target_fid] = current_tail  # restore
+
+
+def _rotation_feasible(solution, tail, graph, flights_by_id) -> bool:
+    """
+    True if the flights currently assigned to `tail` form a connectable chain:
+    sorted by departure, every consecutive pair must have an FCG edge. A
+    rotation of fewer than two flights is trivially feasible.
+    """
+    seq = [fid for fid, t in solution.items() if t == tail]
+    if len(seq) < 2:
+        return True
+    seq.sort(key=lambda fid: flights_by_id[fid].scheduled_departure)
+    return all(
+        graph.has_edge(seq[i], seq[i + 1]) for i in range(len(seq) - 1)
+    )
 
 
 def _is_assignment_feasible(
