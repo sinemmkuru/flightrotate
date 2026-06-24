@@ -50,16 +50,21 @@ class SampleRequest(BaseModel):
     force: bool = False
 
 
-def _guard_published_plan(db, force: bool) -> None:
-    """Refuse a destructive data load when a published plan would be lost."""
+def _guard_published_plan(db, force: bool, plan_id=None) -> None:
+    """
+    Refuse a destructive data load when a published plan would be lost. Scoped
+    to `plan_id` when given (flight loads only wipe the active plan); global
+    when None (a fleet load wipes every plan's runs).
+    """
     if force:
         return
-    published = (
-        db.query(OptimizationRun)
-        .filter(OptimizationRun.status == "published",
-                OptimizationRun.deleted_at == None)  # noqa: E711
-        .first()
+    q = db.query(OptimizationRun).filter(
+        OptimizationRun.status == "published",
+        OptimizationRun.deleted_at == None,  # noqa: E711
     )
+    if plan_id is not None:
+        q = q.filter(OptimizationRun.plan_id == plan_id)
+    published = q.first()
     if published is not None:
         raise HTTPException(
             status_code=409,
@@ -87,28 +92,39 @@ def generate_sample(request: SampleRequest):
     If clear_existing is True (default), wipes flights and aircraft before
     generating new ones. Airports are left untouched.
     """
-    if request.clear_existing:
-        db = SessionLocal()
-        try:
-            _guard_published_plan(db, request.force)
-            # FK-safe delete order: children before parents.
-            # SQLite's foreign_keys=ON pragma rejects deletes that would
-            # orphan referencing rows, so assignments and runs go first.
-            db.query(Assignment).delete()
-            db.query(OptimizationRun).delete()
-            db.query(FlightConnection).delete()
-            db.query(Flight).delete()
-            db.query(Aircraft).delete()
+    from api.routes.plans import get_active_plan_id
+    db = SessionLocal()
+    try:
+        plan_id = get_active_plan_id(db)
+        if request.clear_existing:
+            _guard_published_plan(db, request.force, plan_id)
+            # Wipe only the ACTIVE plan's flights + runs (FK-safe order); the
+            # global fleet is untouched and reused by the generator.
+            run_ids = [
+                r[0] for r in db.query(OptimizationRun.run_id)
+                .filter(OptimizationRun.plan_id == plan_id).all()
+            ]
+            if run_ids:
+                db.query(Assignment).filter(
+                    Assignment.run_id.in_(run_ids)
+                ).delete(synchronize_session=False)
+            db.query(OptimizationRun).filter(
+                OptimizationRun.plan_id == plan_id
+            ).delete(synchronize_session=False)
+            db.query(Flight).filter(
+                Flight.plan_id == plan_id
+            ).delete(synchronize_session=False)
             db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
     try:
         result = generate_flights(
-            size=request.size, seed=request.seed, num_days=request.num_days
+            size=request.size, seed=request.seed,
+            num_days=request.num_days, plan_id=plan_id,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
@@ -251,12 +267,25 @@ async def upload_flights(file: UploadFile = File(...), force: bool = False):
         if errors:
             return {"ok": False, "flights_imported": 0, "errors": errors, "warnings": warnings}
 
-        # 3. Ingest. Clear flights + dependents (FK-safe), keep aircraft + airports.
-        _guard_published_plan(db, force)
-        db.query(Assignment).delete(synchronize_session=False)
-        db.query(OptimizationRun).delete(synchronize_session=False)
-        db.query(FlightConnection).delete(synchronize_session=False)
-        db.query(Flight).delete(synchronize_session=False)
+        # 3. Ingest into the ACTIVE plan only. Wipe this plan's flights + runs
+        #    (FK-safe); the global fleet and other plans are untouched.
+        from api.routes.plans import get_active_plan_id
+        plan_id = get_active_plan_id(db)
+        _guard_published_plan(db, force, plan_id)
+        run_ids = [
+            r[0] for r in db.query(OptimizationRun.run_id)
+            .filter(OptimizationRun.plan_id == plan_id).all()
+        ]
+        if run_ids:
+            db.query(Assignment).filter(
+                Assignment.run_id.in_(run_ids)
+            ).delete(synchronize_session=False)
+        db.query(OptimizationRun).filter(
+            OptimizationRun.plan_id == plan_id
+        ).delete(synchronize_session=False)
+        db.query(Flight).filter(
+            Flight.plan_id == plan_id
+        ).delete(synchronize_session=False)
         db.commit()
 
         default_base = date.today()
@@ -270,7 +299,10 @@ async def upload_flights(file: UploadFile = File(...), force: bool = False):
             lat2, lon2 = airports[dest]
             dist = int(round(_haversine_km(lat1, lon1, lat2, lon2)))
             db.add(Flight(
-                flight_id=fid,
+                # Namespace the id per plan so the same CSV id can live in
+                # multiple plans; flight_number keeps the user's clean id.
+                flight_id=f"{plan_id}:{fid}",
+                plan_id=plan_id,
                 flight_number=fid,        # CSV has no separate number; reuse id
                 origin=origin,
                 destination=dest,

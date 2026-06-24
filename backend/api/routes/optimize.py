@@ -39,6 +39,7 @@ from engine.graph_builder import build_flight_connection_graph
 from engine.genetic_algorithm import run_genetic_algorithm, DEFAULT_GA_PARAMS
 from engine.cost_model import flight_fuel_kg, fuel_cost_usd
 from engine.solution import DEFAULT_WEIGHTS, build_aircraft_caps, evaluate_solution
+from api.routes.plans import get_active_plan_id
 
 
 router = APIRouter()
@@ -58,9 +59,15 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
 def _execute_optimization(
     request: OptimizeRequest, db: Session, progress_callback=None
 ) -> OptimizeResponse:
+    # Everything is scoped to the active plan (flights/runs); the fleet is global.
+    plan_id = get_active_plan_id(db)
     # Guard: don't run on an empty dataset (e.g. only a broken upload was attempted).
     from persistence.models import Flight, Aircraft
-    flight_count = db.query(Flight).filter(Flight.deleted_at.is_(None)).count()
+    flight_count = (
+        db.query(Flight)
+        .filter(Flight.deleted_at.is_(None), Flight.plan_id == plan_id)
+        .count()
+    )
     aircraft_count = db.query(Aircraft).filter(Aircraft.deleted_at.is_(None)).count()
     if flight_count == 0 or aircraft_count == 0:
         missing = []
@@ -84,7 +91,10 @@ def _execute_optimization(
     # --- 1. Load data from DB ---
     flights = (
         db.query(Flight)
-        .filter(Flight.status == "scheduled", Flight.deleted_at == None)
+        .filter(
+            Flight.status == "scheduled", Flight.deleted_at == None,  # noqa: E711
+            Flight.plan_id == plan_id,
+        )
         .all()
     )
     aircraft_list = (
@@ -135,7 +145,10 @@ def _execute_optimization(
     # plan of record if there is one, otherwise the most recent run.
     prior_run = (
         db.query(OptimizationRun)
-        .filter(OptimizationRun.deleted_at.is_(None))
+        .filter(
+            OptimizationRun.deleted_at.is_(None),
+            OptimizationRun.plan_id == plan_id,
+        )
         .order_by(
             (OptimizationRun.status == "published").desc(),
             OptimizationRun.created_at.desc(),
@@ -290,6 +303,7 @@ def _execute_optimization(
     }
     new_run = OptimizationRun(
         run_id=run_id,
+        plan_id=plan_id,
         created_at=datetime.now(timezone.utc),
         algorithm=effective_algorithm,   # store the solver actually used
         weight_idle=w.idle,
@@ -403,7 +417,11 @@ def optimize_async(request: OptimizeRequest, db: Session = Depends(get_db)):
     """
     # Fast, synchronous validation so obviously-bad requests fail immediately
     # instead of as a background error.
-    flight_count = db.query(Flight).filter(Flight.deleted_at.is_(None)).count()
+    flight_count = (
+        db.query(Flight)
+        .filter(Flight.deleted_at.is_(None), Flight.plan_id == get_active_plan_id(db))
+        .count()
+    )
     aircraft_count = db.query(Aircraft).filter(Aircraft.deleted_at.is_(None)).count()
     if flight_count == 0 or aircraft_count == 0:
         missing = []

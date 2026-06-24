@@ -107,10 +107,12 @@ def _random_departure_time(day_base, latest_hour=22):
     return day_base.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
-def _make_flight(flight_id, flight_number, origin, destination, dep, arr, distance):
+def _make_flight(flight_id, flight_number, origin, destination, dep, arr, distance,
+                 plan_id=None):
     """Builds a Flight ORM object (not yet added to the session)."""
     return Flight(
         flight_id=flight_id,
+        plan_id=plan_id,
         flight_number=flight_number,
         origin=origin,
         destination=destination,
@@ -121,7 +123,8 @@ def _make_flight(flight_id, flight_number, origin, destination, dep, arr, distan
     )
 
 
-def generate_flights(size="medium", seed=None, target_date=None, num_days=1):
+def generate_flights(size="medium", seed=None, target_date=None, num_days=1,
+                     plan_id=None):
     """
     Generates a synthetic flight schedule and aircraft fleet, writes them to DB.
 
@@ -174,10 +177,14 @@ def generate_flights(size="medium", seed=None, target_date=None, num_days=1):
         if not operational_hubs:
             operational_hubs = operational_codes  # fallback: treat all as hubs
 
-        # --- Generate aircraft fleet (created ONCE, shared across all days) ---
-        # Bases are weighted toward hubs too.
+        # --- Aircraft fleet is GLOBAL (one airline, one fleet, shared by all
+        # plans). Create it only when none exists yet; otherwise reuse it so
+        # generating a new plan's flights doesn't disturb other plans. ---
+        existing_ac = (
+            db.query(Aircraft).filter(Aircraft.deleted_at == None).count()  # noqa: E711
+        )
         aircraft_list = []
-        for i in range(aircraft_count):
+        for i in range(aircraft_count if existing_ac == 0 else 0):
             # Distribute aircraft across hubs proportionally to their
             # share of flight origins. This matches real airline practice:
             # bigger hubs need more aircraft based there.
@@ -214,6 +221,10 @@ def generate_flights(size="medium", seed=None, target_date=None, num_days=1):
         # fresh randomized set; the whole run stays reproducible under `seed`.
         flights_added = 0
         flight_seq = 0  # globally unique flight-number counter
+        # Flight ids are namespaced per plan so the same generated id can exist
+        # in different plans without colliding on the global primary key. The
+        # prefix is internal only; the UI shows flight_number, not flight_id.
+        idp = f"{plan_id}:" if plan_id is not None else ""
 
         def pick_pair():
             """Pick a (hub, other) airport pair with hub as the anchor."""
@@ -240,8 +251,8 @@ def generate_flights(size="medium", seed=None, target_date=None, num_days=1):
                 arr_out = dep_out + timedelta(minutes=dur)
                 day_counter += 1
                 db.add(_make_flight(
-                    f"F{day_counter:04d}_{day_tag}", f"TK{2000 + flight_seq}",
-                    hub, spoke, dep_out, arr_out, dist,
+                    f"{idp}F{day_counter:04d}_{day_tag}", f"TK{2000 + flight_seq}",
+                    hub, spoke, dep_out, arr_out, dist, plan_id=plan_id,
                 ))
                 flight_seq += 1
                 flights_added += 1
@@ -252,8 +263,8 @@ def generate_flights(size="medium", seed=None, target_date=None, num_days=1):
                 arr_back = dep_back + timedelta(minutes=dur)
                 day_counter += 1
                 db.add(_make_flight(
-                    f"F{day_counter:04d}_{day_tag}", f"TK{2000 + flight_seq}",
-                    spoke, hub, dep_back, arr_back, dist,
+                    f"{idp}F{day_counter:04d}_{day_tag}", f"TK{2000 + flight_seq}",
+                    spoke, hub, dep_back, arr_back, dist, plan_id=plan_id,
                 ))
                 flight_seq += 1
                 flights_added += 1
@@ -268,8 +279,8 @@ def generate_flights(size="medium", seed=None, target_date=None, num_days=1):
                 arr = dep + timedelta(minutes=dur)
                 day_counter += 1
                 db.add(_make_flight(
-                    f"F{day_counter:04d}_{day_tag}", f"TK{2000 + flight_seq}",
-                    hub, spoke, dep, arr, dist,
+                    f"{idp}F{day_counter:04d}_{day_tag}", f"TK{2000 + flight_seq}",
+                    hub, spoke, dep, arr, dist, plan_id=plan_id,
                 ))
                 flight_seq += 1
                 flights_added += 1
@@ -281,7 +292,7 @@ def generate_flights(size="medium", seed=None, target_date=None, num_days=1):
             "size": size,
             "num_days": num_days,
             "flights_generated": flights_added,
-            "aircraft_generated": len(aircraft_list),
+            "aircraft_generated": len(aircraft_list) if aircraft_list else existing_ac,
             "date": base_date.strftime("%Y-%m-%d"),        # start (kept for the UI)
             "start_date": base_date.strftime("%Y-%m-%d"),
             "end_date": end_date.strftime("%Y-%m-%d"),

@@ -17,7 +17,7 @@ Interactive API docs are then available at:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import upload, optimize, analytics, export, fleet
+from api.routes import upload, optimize, analytics, export, fleet, plans
 from persistence.database import ensure_schema
 
 # Apply any lightweight schema migrations (e.g. the optimization_runs.status
@@ -52,6 +52,7 @@ app.include_router(optimize.router, prefix="/api", tags=["optimize"])
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 app.include_router(export.router, prefix="/api", tags=["export"])
 app.include_router(fleet.router, prefix="/api", tags=["fleet"])
+app.include_router(plans.router, prefix="/api", tags=["plans"])
 
 @app.get("/")
 def root():

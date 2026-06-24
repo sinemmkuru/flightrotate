@@ -12,6 +12,7 @@ from typing import Optional
 
 from persistence.database import get_db
 from persistence.models import OptimizationRun, Assignment, Flight, Aircraft, AuditLog
+from api.routes.plans import get_active_plan_id
 from api.schemas.optimization import (
     KPI, ObjectiveWeights, RunSummary, AssignmentRow,
 )
@@ -63,7 +64,10 @@ def list_runs(db: Session = Depends(get_db)):
     """Returns all optimization runs, newest first."""
     runs = (
         db.query(OptimizationRun)
-        .filter(OptimizationRun.deleted_at == None)
+        .filter(
+            OptimizationRun.deleted_at == None,  # noqa: E711
+            OptimizationRun.plan_id == get_active_plan_id(db),
+        )
         .order_by(OptimizationRun.created_at.desc())
         .all()
     )
@@ -95,6 +99,7 @@ def get_published_plan(db: Session = Depends(get_db)):
         .filter(
             OptimizationRun.status == "published",
             OptimizationRun.deleted_at == None,  # noqa: E711
+            OptimizationRun.plan_id == get_active_plan_id(db),
         )
         .order_by(OptimizationRun.created_at.desc())
         .first()
@@ -393,7 +398,11 @@ def list_airports(db: Session = Depends(get_db)):
 def data_status(db: Session = Depends(get_db)):
     """Quick counts so the UI can tell whether there is data to optimize."""
     from persistence.models import Flight, Aircraft, Airport
-    flights = db.query(Flight).filter(Flight.deleted_at.is_(None)).count()
+    flights = (
+        db.query(Flight)
+        .filter(Flight.deleted_at.is_(None), Flight.plan_id == get_active_plan_id(db))
+        .count()
+    )
     aircraft = db.query(Aircraft).filter(Aircraft.deleted_at.is_(None)).count()
     airports = db.query(Airport).filter(Airport.deleted_at.is_(None)).count()
     return {"flights": flights, "aircraft": aircraft, "airports": airports}
@@ -411,7 +420,10 @@ def get_baseline(db: Session = Depends(get_db)):
 
     flights = (
         db.query(Flight)
-        .filter(Flight.status == "scheduled", Flight.deleted_at == None)  # noqa: E711
+        .filter(
+            Flight.status == "scheduled", Flight.deleted_at == None,  # noqa: E711
+            Flight.plan_id == get_active_plan_id(db),
+        )
         .all()
     )
     aircraft_list = (
@@ -459,7 +471,10 @@ def disrupt(req: DisruptRequest, db: Session = Depends(get_db)):
 
     flights = (
         db.query(Flight)
-        .filter(Flight.status == "scheduled", Flight.deleted_at == None)  # noqa: E711
+        .filter(
+            Flight.status == "scheduled", Flight.deleted_at == None,  # noqa: E711
+            Flight.plan_id == get_active_plan_id(db),
+        )
         .all()
     )
     aircraft_list = (
@@ -486,7 +501,10 @@ def disrupt(req: DisruptRequest, db: Session = Depends(get_db)):
         # one exists, otherwise the most recent run.
         latest = (
             db.query(OptimizationRun)
-            .filter(OptimizationRun.deleted_at.is_(None))
+            .filter(
+                OptimizationRun.deleted_at.is_(None),
+                OptimizationRun.plan_id == get_active_plan_id(db),
+            )
             .order_by(
                 (OptimizationRun.status == "published").desc(),
                 OptimizationRun.created_at.desc(),

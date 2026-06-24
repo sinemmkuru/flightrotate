@@ -29,6 +29,22 @@ def utcnow():
 
 
 # ---------------------------------------------------------------------------
+# PLANS - A named schedule/horizon that owns its own flights, fleet and runs
+# ---------------------------------------------------------------------------
+# Multiple plans coexist (e.g. "June" and "July"); exactly one is active, and
+# all data operations are scoped to the active plan. Loading new data into the
+# active plan never touches the others. Airports stay shared master data.
+class Plan(Base):
+    __tablename__ = "plans"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(80), nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    is_active = Column(Boolean, default=False, nullable=False)  # one active at a time
+    deleted_at = Column(DateTime, nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # AIRPORTS - Havalimani master verisi
 # ---------------------------------------------------------------------------
 class Airport(Base):
@@ -87,6 +103,7 @@ class Flight(Base):
 
     # flight_id: sistem ici benzersiz kimlik (flight_number'dan farkli)
     flight_id = Column(String(30), primary_key=True)
+    plan_id = Column(Integer, ForeignKey("plans.id"))    # owning plan (active-plan scope)
     flight_number = Column(String(10), nullable=False)   # Ornek: "TK2102"
     origin = Column(String(3), ForeignKey("airports.iata_code"), nullable=False)
     destination = Column(String(3), ForeignKey("airports.iata_code"), nullable=False)
@@ -113,6 +130,7 @@ class OptimizationRun(Base):
     __tablename__ = "optimization_runs"
 
     run_id = Column(String(40), primary_key=True)        # UUID
+    plan_id = Column(Integer, ForeignKey("plans.id"))    # owning plan (active-plan scope)
     created_at = Column(DateTime, default=utcnow)
     algorithm = Column(String(30), nullable=False)       # cp_sat / genetic / simulated_annealing
 
