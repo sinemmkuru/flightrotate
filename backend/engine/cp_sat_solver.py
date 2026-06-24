@@ -16,6 +16,7 @@ FEASIBLE) is surfaced so callers can tell when the time limit was hit and the
 result is no longer provably optimal.
 """
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
 
@@ -44,6 +45,7 @@ def run_cp_sat(
     graph,
     weights: Optional[dict] = None,
     time_limit_seconds: float = 20.0,
+    aircraft_starts: Optional[dict] = None,
 ) -> CPSATResult:
     start = time.perf_counter()
 
@@ -102,6 +104,26 @@ def run_cp_sat(
     for (i, j) in edges:
         if not (eligible_sets[i] & eligible_sets[j]):
             model.Add(x[(i, j)] == 0)
+
+    # --- Start-position capacity (when aircraft positions are known) ---
+    # A chain can only BEGIN at an airport that has an aircraft standing there.
+    # start[f] = covered[f] - (chosen predecessors of f) equals 1 iff f opens a
+    # chain, so the number of chains opening at each airport is capped by the
+    # aircraft positioned there. Modelling this (rather than only filtering at
+    # reconstruction) lets the solver fall back to a shorter coverable chain
+    # instead of building one no positioned aircraft can fly.
+    if aircraft_starts:
+        cap_at: dict = defaultdict(int)
+        for t in tails:
+            ap = aircraft_starts.get(t)
+            if ap is not None:
+                cap_at[ap] += 1
+        flights_by_origin: dict = defaultdict(list)
+        for fid in flight_ids:
+            flights_by_origin[flights_by_id[fid].origin].append(fid)
+        for origin, fids in flights_by_origin.items():
+            starts_here = sum(covered[fid] - sum(in_edges[fid]) for fid in fids)
+            model.Add(starts_here <= cap_at.get(origin, 0))
 
     # --- Objective: coverage primary, weighted idle + fuel secondary ---
     # Coverage is the primary (lexicographic) goal: COVERAGE_REWARD is far larger
@@ -192,6 +214,15 @@ def run_cp_sat(
                 chain_eligible &= eligible_sets[fid]
                 if not chain_eligible:
                     break
+            # Start position: an aircraft can only take a chain that begins where
+            # it currently stands. chain[0] is the chain's first (earliest) leg.
+            if aircraft_starts:
+                first_origin = flights_by_id[chain[0]].origin
+                chain_eligible = {
+                    t for t in chain_eligible
+                    if aircraft_starts.get(t) is None
+                    or aircraft_starts[t] == first_origin
+                }
             for t in chain_eligible:
                 match_graph.add_edge(("chain", idx), ("tail", t), weight=len(chain))
 
@@ -205,7 +236,9 @@ def run_cp_sat(
     # KPIs via the SAME evaluator the GA uses -> fair comparison. Passing the
     # capabilities makes the feasibility flag reflect availability/maintenance
     # too, consistent with the genetic algorithm.
-    fitness = evaluate_solution(solution, flights_by_id, graph, weights, caps)
+    fitness = evaluate_solution(
+        solution, flights_by_id, graph, weights, caps, aircraft_starts
+    )
     elapsed = time.perf_counter() - start
 
     print(

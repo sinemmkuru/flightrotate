@@ -46,6 +46,7 @@ def build_random_solution(
     aircraft_list: list,
     flights_by_id: dict,
     graph,
+    aircraft_starts: dict = None,
 ) -> dict:
     """
     Constructs a single feasible-by-construction solution.
@@ -75,21 +76,32 @@ def build_random_solution(
         # This aircraft's availability / maintenance window. Only flights it can
         # legally operate are eligible for its rotation.
         caps_entry = (aircraft.available_from, aircraft.maintenance_due)
+        # Enforced start airport (e.g. where the aircraft stands after its locked
+        # past legs). When set, the rotation MUST begin there with no fallback;
+        # when None, the base airport is just a soft preference as before.
+        start_airport = aircraft_starts.get(tail) if aircraft_starts else None
+        required_origin = (
+            start_airport if start_airport is not None else aircraft.base_airport
+        )
 
         # --- Pick a starting flight ---
-        # Prefer base-airport flights with the most onward connections.
-        # Candidate lists are sorted into a canonical order first so the
-        # weighted pick is reproducible regardless of graph build order.
+        # Prefer flights departing the required origin with the most onward
+        # connections. Candidate lists are sorted into a canonical order first
+        # so the weighted pick is reproducible regardless of graph build order.
         base_candidates = _sorted_candidates(
             [
                 fid for fid, f in flights_by_id.items()
-                if fid not in assigned_flights and f.origin == aircraft.base_airport
+                if fid not in assigned_flights and f.origin == required_origin
                 and aircraft_can_fly(caps_entry, f)
             ],
             flights_by_id,
         )
         if base_candidates:
             current_fid = _weighted_pick_by_outdegree(base_candidates, graph)
+        elif start_airport is not None:
+            # Start position is enforced: the aircraft cannot begin a rotation
+            # anywhere other than where it is, so it flies nothing this build.
+            continue
         else:
             available = _sorted_candidates(
                 [
@@ -148,6 +160,7 @@ def build_initial_population(
     flights_by_id: dict,
     graph,
     seed: Optional[int] = None,
+    aircraft_starts: dict = None,
 ) -> list[dict]:
     """
     Builds an initial population of feasible solutions for the GA.
@@ -167,7 +180,9 @@ def build_initial_population(
 
     population = []
     for _ in range(population_size):
-        solution = build_random_solution(aircraft_list, flights_by_id, graph)
+        solution = build_random_solution(
+            aircraft_list, flights_by_id, graph, aircraft_starts
+        )
         population.append(solution)
 
     return population

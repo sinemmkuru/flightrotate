@@ -21,7 +21,8 @@ it necessary (see Future Work in the thesis).
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -155,6 +156,44 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
         future_flights, airport_turnarounds=airport_turnarounds
     )
 
+    # --- 4b. Carry each aircraft's position/availability across the boundary ---
+    # An aircraft that flew locked past legs now stands at that last leg's
+    # destination and is free only after it lands (+ turnaround). The future
+    # optimisation starts it from there: its first future leg must depart that
+    # airport (aircraft_starts) at/after that time (effective available_from).
+    # Aircraft with no locked past keep their base (a soft preference, so they
+    # are left out of aircraft_starts) and their normal availability.
+    DEFAULT_TURN = 45
+    past_by_tail: dict[str, list[str]] = {}
+    for fid, tail in locked_past.items():
+        past_by_tail.setdefault(tail, []).append(fid)
+    past_fbi = {f.flight_id: f for f in past_flights}
+
+    effective_aircraft = []
+    aircraft_starts: dict[str, str] = {}
+    for ac in aircraft_list:
+        legs = past_by_tail.get(ac.tail_number)
+        if legs:
+            last = max(
+                (past_fbi[fid] for fid in legs),
+                key=lambda f: f.scheduled_arrival,
+            )
+            start_airport = last.destination
+            turn = airport_turnarounds.get(start_airport, DEFAULT_TURN)
+            eff_available_from = last.scheduled_arrival + timedelta(minutes=turn)
+            aircraft_starts[ac.tail_number] = start_airport  # position is fixed
+        else:
+            start_airport = ac.base_airport          # soft; not pinned
+            eff_available_from = ac.available_from
+        effective_aircraft.append(SimpleNamespace(
+            tail_number=ac.tail_number,
+            aircraft_type=ac.aircraft_type,
+            base_airport=start_airport,
+            available_from=eff_available_from,
+            maintenance_due=ac.maintenance_due,
+            status=ac.status,
+        ))
+
     # --- 5. Prepare GA parameters ---
     weights_dict = {
         "coverage": w.coverage,
@@ -191,20 +230,22 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
             cp_kwargs["time_limit_seconds"] = request.time_limit_seconds
         result = run_cp_sat(
             flights=future_flights,
-            aircraft_list=aircraft_list,
+            aircraft_list=effective_aircraft,
             graph=graph,
             weights=weights_dict,
+            aircraft_starts=aircraft_starts,
             **cp_kwargs,
         )
         cp_status = result.status
     else:
         result = run_genetic_algorithm(
             flights=future_flights,
-            aircraft_list=aircraft_list,
+            aircraft_list=effective_aircraft,
             graph=graph,
             weights=weights_dict,
             params=params_dict,
             seed=request.seed,
+            aircraft_starts=aircraft_starts,
         )
 
     # --- 7. Combine locked past + optimized future into one plan ---

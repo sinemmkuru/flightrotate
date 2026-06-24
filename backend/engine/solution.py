@@ -109,6 +109,7 @@ def evaluate_solution(
     graph,
     weights: Optional[dict] = None,
     aircraft_caps: Optional[dict] = None,
+    aircraft_starts: Optional[dict] = None,
 ) -> FitnessBreakdown:
     """
     Computes the fitness of a candidate solution.
@@ -132,6 +133,12 @@ def evaluate_solution(
                  assigns a flight to an aircraft that cannot legally operate it
                  (departs before availability, or operates on/after maintenance)
                  is marked infeasible. When None, no availability check is done.
+        aircraft_starts: optional {tail: iata_code} map giving the airport each
+                 aircraft is at when the plan starts (e.g. where it stands after
+                 its locked past legs). When provided, a rotation whose FIRST
+                 leg does not depart from that airport is infeasible: an aircraft
+                 cannot teleport to begin a flight elsewhere. When None, no
+                 start-position check is done.
 
     Returns:
         A FitnessBreakdown describing the solution's quality.
@@ -161,11 +168,16 @@ def evaluate_solution(
 
     for tail, flight_ids in by_aircraft.items():
         caps_entry = aircraft_caps.get(tail) if aircraft_caps else None
+        start_airport = aircraft_starts.get(tail) if aircraft_starts else None
         for i, fid in enumerate(flight_ids):
             flight = flights_by_id[fid]
             # Aircraft availability / maintenance: a rotation that puts a flight
             # on a tail that cannot legally operate it is infeasible.
             if caps_entry is not None and not aircraft_can_fly(caps_entry, flight):
+                is_feasible = False
+            # Start position: the aircraft's first leg must depart from where it
+            # actually is; it cannot teleport to start a rotation elsewhere.
+            if i == 0 and start_airport is not None and flight.origin != start_airport:
                 is_feasible = False
             total_fuel += flight_fuel_kg(flight.distance_km)
             if i == 0:

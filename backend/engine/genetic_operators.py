@@ -138,6 +138,7 @@ def mutate(
     flights_by_id: dict,
     aircraft_list: list,
     mutation_rate: float = 0.15,
+    aircraft_starts: dict = None,
 ) -> dict:
     """
     Applies a small random change to a solution.
@@ -149,7 +150,8 @@ def mutate(
         aircraft
 
     Each candidate move is FCG-checked; infeasible moves are silently
-    skipped.
+    skipped. When aircraft_starts is given, an aircraft's first leg must depart
+    from its start airport (see _is_assignment_feasible).
     """
     if random.random() > mutation_rate:
         return solution
@@ -157,14 +159,18 @@ def mutate(
     if random.random() < 0.6:
         # Extend is more valuable than swap for raising coverage,
         # so it gets a slightly higher chance.
-        _try_extend(solution, graph, flights_by_id, aircraft_list)
+        _try_extend(solution, graph, flights_by_id, aircraft_list, aircraft_starts)
     else:
-        _try_swap(solution, graph, flights_by_id, aircraft_list)
+        _try_swap(solution, graph, flights_by_id, aircraft_list, aircraft_starts)
 
     return solution
 
 
-def _try_extend(solution, graph, flights_by_id, aircraft_list):
+def _start_for(aircraft_starts, tail):
+    return aircraft_starts.get(tail) if aircraft_starts else None
+
+
+def _try_extend(solution, graph, flights_by_id, aircraft_list, aircraft_starts=None):
     """
     Try to assign one currently-unassigned flight to an aircraft.
     """
@@ -184,13 +190,14 @@ def _try_extend(solution, graph, flights_by_id, aircraft_list):
         ):
             continue
         if _is_assignment_feasible(
-            solution, target_fid, aircraft.tail_number, graph, flights_by_id
+            solution, target_fid, aircraft.tail_number, graph, flights_by_id,
+            _start_for(aircraft_starts, aircraft.tail_number),
         ):
             solution[target_fid] = aircraft.tail_number
             return
 
 
-def _try_swap(solution, graph, flights_by_id, aircraft_list):
+def _try_swap(solution, graph, flights_by_id, aircraft_list, aircraft_starts=None):
     """
     Try to move one currently-assigned flight to a different aircraft.
     """
@@ -203,10 +210,13 @@ def _try_swap(solution, graph, flights_by_id, aircraft_list):
     target_flight = flights_by_id[target_fid]
     solution[target_fid] = None
     # Pulling a flight out of the MIDDLE of its old rotation can leave the two
-    # halves no longer connectable (e.g. A->B->C becomes A,C with no A->C edge).
-    # If removing it breaks the source rotation, this move is infeasible: undo
-    # it and bail rather than leaving an invalid solution behind.
-    if not _rotation_feasible(solution, current_tail, graph, flights_by_id):
+    # halves no longer connectable (e.g. A->B->C becomes A,C with no A->C edge),
+    # or strip away the leg that anchored the rotation to the aircraft's start
+    # airport. If removing it breaks the source rotation, undo and bail.
+    if not _rotation_feasible(
+        solution, current_tail, graph, flights_by_id,
+        _start_for(aircraft_starts, current_tail),
+    ):
         solution[target_fid] = current_tail
         return
     candidates = [a for a in aircraft_list if a.tail_number != current_tail]
@@ -217,7 +227,8 @@ def _try_swap(solution, graph, flights_by_id, aircraft_list):
         ):
             continue
         if _is_assignment_feasible(
-            solution, target_fid, aircraft.tail_number, graph, flights_by_id
+            solution, target_fid, aircraft.tail_number, graph, flights_by_id,
+            _start_for(aircraft_starts, aircraft.tail_number),
         ):
             solution[target_fid] = aircraft.tail_number
             return
@@ -225,16 +236,19 @@ def _try_swap(solution, graph, flights_by_id, aircraft_list):
     solution[target_fid] = current_tail  # restore
 
 
-def _rotation_feasible(solution, tail, graph, flights_by_id) -> bool:
+def _rotation_feasible(solution, tail, graph, flights_by_id, start_airport=None) -> bool:
     """
     True if the flights currently assigned to `tail` form a connectable chain:
-    sorted by departure, every consecutive pair must have an FCG edge. A
-    rotation of fewer than two flights is trivially feasible.
+    sorted by departure, every consecutive pair must have an FCG edge, and (when
+    given) the first leg must depart from the aircraft's start airport. A
+    rotation of fewer than two flights is trivially feasible apart from start.
     """
     seq = [fid for fid, t in solution.items() if t == tail]
-    if len(seq) < 2:
+    if not seq:
         return True
     seq.sort(key=lambda fid: flights_by_id[fid].scheduled_departure)
+    if start_airport is not None and flights_by_id[seq[0]].origin != start_airport:
+        return False
     return all(
         graph.has_edge(seq[i], seq[i + 1]) for i in range(len(seq) - 1)
     )
@@ -246,16 +260,22 @@ def _is_assignment_feasible(
     tail: str,
     graph,
     flights_by_id: dict,
+    start_airport: str = None,
 ) -> bool:
     """
-    Checks whether assigning new_fid to the given aircraft keeps its
-    rotation feasible (every consecutive pair has an FCG edge).
+    Checks whether assigning new_fid to the given aircraft keeps its rotation
+    feasible: every consecutive pair has an FCG edge and, when start_airport is
+    given, the rotation's first leg departs from it (an aircraft cannot teleport
+    to begin elsewhere).
     """
     existing = [fid for fid, t in solution.items() if t == tail]
     if not existing:
-        return True
+        return start_airport is None or flights_by_id[new_fid].origin == start_airport
     new_seq = existing + [new_fid]
     new_seq.sort(key=lambda fid: flights_by_id[fid].scheduled_departure)
+    # The new flight may become the earliest leg, so re-check the start airport.
+    if start_airport is not None and flights_by_id[new_seq[0]].origin != start_airport:
+        return False
     for i in range(len(new_seq) - 1):
         if not graph.has_edge(new_seq[i], new_seq[i + 1]):
             return False

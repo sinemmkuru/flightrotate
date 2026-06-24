@@ -30,7 +30,7 @@ from engine.solution import evaluate_solution, build_aircraft_caps, aircraft_can
 from engine.cost_model import fuel_cost_usd
 
 
-def greedy_baseline(flights, aircraft_list, graph) -> dict:
+def greedy_baseline(flights, aircraft_list, graph, aircraft_starts=None) -> dict:
     """
     First-come-first-served greedy assignment.
 
@@ -67,10 +67,15 @@ def greedy_baseline(flights, aircraft_list, graph) -> dict:
                 chosen = t
                 break
 
-        # 2) Otherwise start the first idle aircraft that may operate it.
+        # 2) Otherwise start the first idle aircraft that may operate it. An idle
+        #    aircraft can only BEGIN a rotation where it currently stands, so its
+        #    start airport (when known) must match the flight's origin.
         if chosen is None:
             for t in tails:
                 if last_flight[t] is None and aircraft_can_fly(caps[t], f):
+                    start = aircraft_starts.get(t) if aircraft_starts else None
+                    if start is not None and f.origin != start:
+                        continue
                     chosen = t
                     break
 
@@ -82,7 +87,8 @@ def greedy_baseline(flights, aircraft_list, graph) -> dict:
     return solution
 
 
-def compute_baseline_kpis(flights, aircraft_list, airport_turnarounds=None) -> dict:
+def compute_baseline_kpis(flights, aircraft_list, airport_turnarounds=None,
+                          aircraft_starts=None) -> dict:
     """
     Build the FCG, run the greedy baseline, and evaluate it with the same
     evaluator the optimizer uses. Returns a KPI dict ready to serialize.
@@ -95,9 +101,12 @@ def compute_baseline_kpis(flights, aircraft_list, airport_turnarounds=None) -> d
     graph = build_flight_connection_graph(
         flights, airport_turnarounds=airport_turnarounds
     )
-    solution = greedy_baseline(flights, aircraft_list, graph)
+    solution = greedy_baseline(flights, aircraft_list, graph, aircraft_starts)
     caps = build_aircraft_caps(aircraft_list)
-    b = evaluate_solution(solution, flights_by_id, graph, aircraft_caps=caps)
+    b = evaluate_solution(
+        solution, flights_by_id, graph, aircraft_caps=caps,
+        aircraft_starts=aircraft_starts,
+    )
 
     return {
         "algorithm": "greedy_baseline",

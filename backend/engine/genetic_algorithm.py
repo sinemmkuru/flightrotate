@@ -76,6 +76,7 @@ def run_genetic_algorithm(
     params: Optional[dict] = None,
     seed: Optional[int] = None,
     progress_callback: Optional[Callable[[int, float], None]] = None,
+    aircraft_starts: Optional[dict] = None,
 ) -> GAResult:
     """
     Runs the genetic algorithm and returns the best solution found.
@@ -113,6 +114,7 @@ def run_genetic_algorithm(
         flights_by_id=flights_by_id,
         graph=graph,
         seed=seed,
+        aircraft_starts=aircraft_starts,
     )
 
     # Track the best solution ever seen across all generations
@@ -126,7 +128,9 @@ def run_genetic_algorithm(
     for gen in range(params["generations"]):
         # Evaluate fitness for everyone in this generation
         breakdowns = [
-            evaluate_solution(sol, flights_by_id, graph, weights, aircraft_caps)
+            evaluate_solution(
+                sol, flights_by_id, graph, weights, aircraft_caps, aircraft_starts
+            )
             for sol in population
         ]
         scores = [b.fitness for b in breakdowns]
@@ -170,7 +174,7 @@ def run_genetic_algorithm(
             child = crossover(parent_a, parent_b, graph, flights_by_id)
             child = mutate(
                 child, graph, flights_by_id, aircraft_list,
-                params["mutation_rate"],
+                params["mutation_rate"], aircraft_starts,
             )
             new_population.append(child)
 
