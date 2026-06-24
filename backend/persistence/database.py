@@ -51,6 +51,28 @@ def get_db():
         db.close()
 
 
+def ensure_schema():
+    """
+    Lightweight, idempotent migrations for the SQLite database (the project has
+    no Alembic). Adds columns introduced after a database was first created, so
+    an existing flightrotate.db keeps working without being recreated. Safe to
+    call on every startup: it only acts when a column is missing.
+    """
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        existing = {
+            row[1]  # PRAGMA table_info columns: (cid, name, type, ...)
+            for row in conn.execute(text("PRAGMA table_info(optimization_runs)"))
+        }
+        if existing and "status" not in existing:
+            conn.execute(text(
+                "ALTER TABLE optimization_runs "
+                "ADD COLUMN status VARCHAR(20) DEFAULT 'draft'"
+            ))
+            conn.commit()
+
+
 def init_db():
     """
     Tum tablolari olusturur (eger yoksa).

@@ -116,6 +116,12 @@ class OptimizationRun(Base):
     created_at = Column(DateTime, default=utcnow)
     algorithm = Column(String(30), nullable=False)       # cp_sat / genetic / simulated_annealing
 
+    # Plan-of-record status. "draft" = a candidate/scenario run; "published" =
+    # the official operational plan. At most one run is published at a time
+    # (enforced when publishing). Consumers (dashboard, disruption recovery,
+    # past-flight locking) prefer the published run, falling back to the newest.
+    status = Column(String(20), default="draft", nullable=False)
+
     # Objective agirliklari (toplam = 1.0)
     weight_idle = Column(Float, nullable=False)
     weight_fuel = Column(Float, nullable=False)

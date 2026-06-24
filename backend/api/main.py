@@ -18,6 +18,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import upload, optimize, analytics, export, fleet
+from persistence.database import ensure_schema
+
+# Apply any lightweight schema migrations (e.g. the optimization_runs.status
+# column) before serving, so an existing database keeps working.
+ensure_schema()
 
 
 app = FastAPI(

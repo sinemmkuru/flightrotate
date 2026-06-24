@@ -44,6 +44,31 @@ class SampleRequest(BaseModel):
     seed: Optional[int] = None
     num_days: int = Field(1, ge=1, le=120)  # per-day load * num_days = total
     clear_existing: bool = True
+    # Loading new data wipes the schedule and all runs. If a published plan of
+    # record exists, the request is refused (409) unless force=True, so the
+    # official plan can't be destroyed by accident.
+    force: bool = False
+
+
+def _guard_published_plan(db, force: bool) -> None:
+    """Refuse a destructive data load when a published plan would be lost."""
+    if force:
+        return
+    published = (
+        db.query(OptimizationRun)
+        .filter(OptimizationRun.status == "published",
+                OptimizationRun.deleted_at == None)  # noqa: E711
+        .first()
+    )
+    if published is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A published plan exists (run {published.run_id[:8]}). Loading "
+                "new data will delete it and all runs. Resend with force=true "
+                "to confirm."
+            ),
+        )
 
 
 class SampleResponse(BaseModel):
@@ -65,6 +90,7 @@ def generate_sample(request: SampleRequest):
     if request.clear_existing:
         db = SessionLocal()
         try:
+            _guard_published_plan(db, request.force)
             # FK-safe delete order: children before parents.
             # SQLite's foreign_keys=ON pragma rejects deletes that would
             # orphan referencing rows, so assignments and runs go first.
@@ -108,7 +134,7 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 
 
 @router.post("/upload/flights")
-async def upload_flights(file: UploadFile = File(...)):
+async def upload_flights(file: UploadFile = File(...), force: bool = False):
     """
     Ingest a user-provided flight schedule (CSV).
 
@@ -226,6 +252,7 @@ async def upload_flights(file: UploadFile = File(...)):
             return {"ok": False, "flights_imported": 0, "errors": errors, "warnings": warnings}
 
         # 3. Ingest. Clear flights + dependents (FK-safe), keep aircraft + airports.
+        _guard_published_plan(db, force)
         db.query(Assignment).delete(synchronize_session=False)
         db.query(OptimizationRun).delete(synchronize_session=False)
         db.query(FlightConnection).delete(synchronize_session=False)
@@ -273,7 +300,7 @@ async def upload_flights(file: UploadFile = File(...)):
 
 
 @router.post("/upload/aircraft")
-async def upload_aircraft(file: UploadFile = File(...)):
+async def upload_aircraft(file: UploadFile = File(...), force: bool = False):
     """
     Ingest a user-provided aircraft fleet (CSV).
 
@@ -354,6 +381,7 @@ async def upload_aircraft(file: UploadFile = File(...)):
             return {"ok": False, "aircraft_imported": 0, "errors": errors, "warnings": warnings}
 
         # Clear fleet + dependents (FK-safe), keep flights + airports.
+        _guard_published_plan(db, force)
         db.query(Assignment).delete(synchronize_session=False)
         db.query(OptimizationRun).delete(synchronize_session=False)
         db.query(Aircraft).delete(synchronize_session=False)

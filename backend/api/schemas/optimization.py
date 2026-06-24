@@ -84,6 +84,13 @@ class RunSummary(BaseModel):
     # Planning "as-of" time used for this run, if any. Flights before it were
     # locked to a prior plan (history); the UI can shade them as past.
     reference_time: Optional[datetime] = None
+    # "draft" (candidate/scenario) or "published" (the official plan of record).
+    status: str = "draft"
+    # True when the (published) plan references flights/aircraft that no longer
+    # exist, i.e. the schedule changed under it. Only computed for the published
+    # plan; draft/list responses leave it False.
+    stale: bool = False
+    stale_detail: Optional[str] = None
 
 
 class AssignmentRow(BaseModel):

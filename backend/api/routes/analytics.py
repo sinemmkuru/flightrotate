@@ -8,8 +8,10 @@ dashboard, comparison view, and run history.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from typing import Optional
+
 from persistence.database import get_db
-from persistence.models import OptimizationRun, Assignment, Flight
+from persistence.models import OptimizationRun, Assignment, Flight, Aircraft, AuditLog
 from api.schemas.optimization import (
     KPI, ObjectiveWeights, RunSummary, AssignmentRow,
 )
@@ -17,6 +19,18 @@ from engine.cost_model import fuel_cost_usd
 
 
 router = APIRouter()
+
+
+def _audit(db: Session, record_id: str, old: dict, new: dict) -> None:
+    """Record a plan status change in the audit log (who/what/when)."""
+    db.add(AuditLog(
+        table_name="optimization_runs",
+        record_id=record_id,
+        action="UPDATE",
+        old_values=old,
+        new_values=new,
+        changed_by="system",  # no auth layer yet; all changes are "system"
+    ))
 
 
 def _run_to_summary(run: OptimizationRun) -> RunSummary:
@@ -40,6 +54,7 @@ def _run_to_summary(run: OptimizationRun) -> RunSummary:
             solve_time_seconds=run.solve_time_seconds or 0.0,
         ),
         reference_time=(run.parameters or {}).get("reference_time"),
+        status=run.status or "draft",
     )
 
 
@@ -68,6 +83,108 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     )
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return _run_to_summary(run)
+
+
+# ---------- Plan of record (publish / unpublish) ----------
+@router.get("/published-plan", response_model=Optional[RunSummary])
+def get_published_plan(db: Session = Depends(get_db)):
+    """The current published plan of record, or null if none is published."""
+    run = (
+        db.query(OptimizationRun)
+        .filter(
+            OptimizationRun.status == "published",
+            OptimizationRun.deleted_at == None,  # noqa: E711
+        )
+        .order_by(OptimizationRun.created_at.desc())
+        .first()
+    )
+    if run is None:
+        return None
+
+    summary = _run_to_summary(run)
+
+    # Staleness: does the published plan still match the live schedule/fleet?
+    assigns = db.query(Assignment).filter(Assignment.run_id == run.run_id).all()
+    live_flights = {
+        fid for (fid,) in db.query(Flight.flight_id)
+        .filter(Flight.deleted_at == None).all()  # noqa: E711
+    }
+    live_tails = {
+        t for (t,) in db.query(Aircraft.tail_number)
+        .filter(Aircraft.deleted_at == None, Aircraft.status == "active").all()  # noqa: E711
+    }
+    missing_f = sum(1 for a in assigns if a.flight_id not in live_flights)
+    missing_t = sum(1 for a in assigns if a.tail_number not in live_tails)
+    if missing_f or missing_t:
+        parts = []
+        if missing_f:
+            parts.append(f"{missing_f} assigned flight(s) no longer exist")
+        if missing_t:
+            parts.append(f"{missing_t} assignment(s) use a removed/inactive aircraft")
+        summary.stale = True
+        summary.stale_detail = (
+            "Published plan is out of sync with the current schedule: "
+            + "; ".join(parts) + ". Re-optimize and publish to refresh."
+        )
+    return summary
+
+
+@router.post("/runs/{run_id}/publish", response_model=RunSummary)
+def publish_run(run_id: str, db: Session = Depends(get_db)):
+    """
+    Mark a run as the published plan of record. Any previously published run is
+    demoted to draft, so at most one plan is published at a time. Audited.
+    """
+    run = (
+        db.query(OptimizationRun)
+        .filter(
+            OptimizationRun.run_id == run_id,
+            OptimizationRun.deleted_at == None,  # noqa: E711
+        )
+        .first()
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    # Single-publish guarantee: demote whoever is currently published.
+    for other in (
+        db.query(OptimizationRun)
+        .filter(
+            OptimizationRun.status == "published",
+            OptimizationRun.run_id != run_id,
+        )
+        .all()
+    ):
+        _audit(db, other.run_id, {"status": "published"}, {"status": "draft"})
+        other.status = "draft"
+
+    if run.status != "published":
+        _audit(db, run_id, {"status": run.status}, {"status": "published"})
+        run.status = "published"
+    db.commit()
+    db.refresh(run)
+    return _run_to_summary(run)
+
+
+@router.post("/runs/{run_id}/unpublish", response_model=RunSummary)
+def unpublish_run(run_id: str, db: Session = Depends(get_db)):
+    """Demote a published run back to draft (leaving no plan of record)."""
+    run = (
+        db.query(OptimizationRun)
+        .filter(
+            OptimizationRun.run_id == run_id,
+            OptimizationRun.deleted_at == None,  # noqa: E711
+        )
+        .first()
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    if run.status == "published":
+        _audit(db, run_id, {"status": "published"}, {"status": "draft"})
+        run.status = "draft"
+        db.commit()
+        db.refresh(run)
     return _run_to_summary(run)
 
 
@@ -365,10 +482,15 @@ def disrupt(req: DisruptRequest, db: Session = Depends(get_db)):
     # falls back to a fresh solve.)
     plan_solution = None
     if req.type == "delay":
+        # Propagate along the operating plan: the published plan of record if
+        # one exists, otherwise the most recent run.
         latest = (
             db.query(OptimizationRun)
             .filter(OptimizationRun.deleted_at.is_(None))
-            .order_by(OptimizationRun.created_at.desc())
+            .order_by(
+                (OptimizationRun.status == "published").desc(),
+                OptimizationRun.created_at.desc(),
+            )
             .first()
         )
         if latest is not None:

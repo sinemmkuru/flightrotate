@@ -131,11 +131,15 @@ def _execute_optimization(
             ),
         )
 
-    # Lock past flights to their tail from the latest prior run, if one exists.
+    # Lock past flights to their tail from the operating plan: the published
+    # plan of record if there is one, otherwise the most recent run.
     prior_run = (
         db.query(OptimizationRun)
         .filter(OptimizationRun.deleted_at.is_(None))
-        .order_by(OptimizationRun.created_at.desc())
+        .order_by(
+            (OptimizationRun.status == "published").desc(),
+            OptimizationRun.created_at.desc(),
+        )
         .first()
     )
     locked_past: dict[str, str] = {}
