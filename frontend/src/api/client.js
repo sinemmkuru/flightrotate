@@ -66,6 +66,28 @@ export async function getRun(runId) {
   return res.data;
 }
 
+// --- Plans (schedules) ---
+export async function listPlans() {
+  const res = await client.get("/plans");
+  return res.data;
+}
+export async function createPlan(name) {
+  const res = await client.post("/plans", { name });
+  return res.data;
+}
+export async function activatePlan(id) {
+  const res = await client.post(`/plans/${id}/activate`);
+  return res.data;
+}
+export async function renamePlan(id, name) {
+  const res = await client.put(`/plans/${id}`, { name });
+  return res.data;
+}
+export async function deletePlan(id) {
+  const res = await client.delete(`/plans/${id}`);
+  return res.data;
+}
+
 // --- Plan of record (publish / unpublish) ---
 export async function getPublishedPlan() {
   const res = await client.get("/published-plan");

@@ -7,6 +7,7 @@
 */
 
 import { NavLink } from "react-router-dom";
+import PlanSwitcher from "./PlanSwitcher";
 import "./Layout.css";
 
 const NAV_ITEMS = [
@@ -29,6 +30,8 @@ function Layout({ children }) {
           <h1>FlightRotate</h1>
           <p className="sidebar-subtitle">Aircraft Rotation Optimizer</p>
         </div>
+
+        <PlanSwitcher />
 
         <nav className="sidebar-nav">
           {NAV_ITEMS.map((item) => (
