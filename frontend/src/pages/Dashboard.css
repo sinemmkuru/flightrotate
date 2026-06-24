@@ -60,6 +60,35 @@
   font-family: inherit;
 }
 
+/* Date-range window filter for the Gantt/assignments. */
+.date-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+}
+.date-filter label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.date-filter input {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.df-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 /* Staleness warning for an out-of-sync published plan. */
 .stale-banner {
   padding: 10px 14px;

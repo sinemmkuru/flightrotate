@@ -58,11 +58,27 @@ function Dashboard() {
   const [asOf, setAsOf] = useState(nowLocalInput);
   // Live progress of a background optimization job (null when idle).
   const [progress, setProgress] = useState(null);
+  // Date-range window for the Gantt/table (YYYY-MM-DD). Useful when a published
+  // plan spans many days; KPI cards still reflect the whole plan.
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   // On mount: load runs, pick the newest, fetch its assignments + baseline
   useEffect(() => {
     loadLatestRun();
   }, []);
+
+  // Reset the date window to a plan's full span when its assignments load.
+  function resetDateWindow(rows) {
+    if (!rows || rows.length === 0) {
+      setFromDate("");
+      setToDate("");
+      return;
+    }
+    const dates = rows.map((a) => a.scheduled_departure.slice(0, 10));
+    setFromDate(dates.reduce((a, b) => (a < b ? a : b)));
+    setToDate(dates.reduce((a, b) => (a > b ? a : b)));
+  }
 
   async function loadLatestRun() {
     setLoading(true);
@@ -81,11 +97,13 @@ function Dashboard() {
         setAssignments([]);
         setBaseline(null);
         setCurrentRunId(null);
+        resetDateWindow([]);
       } else {
         setRun(chosen);
         setCurrentRunId(chosen.run_id);
         const rows = await getAssignments(chosen.run_id);
         setAssignments(rows);
+        resetDateWindow(rows);
         // Baseline is independent of the run; never let it break the dashboard.
         try {
           const bl = await getBaseline();
@@ -161,6 +179,19 @@ function Dashboard() {
   // Compute baseline deltas (only when we have both a run and a baseline).
   const bl =
     run && baseline?.available ? buildBaselineDeltas(run, baseline) : null;
+
+  // Date-range windowing for the Gantt/table (KPI cards stay whole-plan).
+  const allDates = assignments.map((a) => a.scheduled_departure.slice(0, 10));
+  const spanMin = allDates.length ? allDates.reduce((a, b) => (a < b ? a : b)) : "";
+  const spanMax = allDates.length ? allDates.reduce((a, b) => (a > b ? a : b)) : "";
+  const multiDay = spanMin && spanMax && spanMin !== spanMax;
+  const filteredAssignments =
+    fromDate && toDate
+      ? assignments.filter((a) => {
+          const d = a.scheduled_departure.slice(0, 10);
+          return d >= fromDate && d <= toDate;
+        })
+      : assignments;
 
   return (
     <div className="dashboard">
@@ -329,15 +360,57 @@ function Dashboard() {
             <p className="hint small">
               Click a flight block for full details and rotation context.
             </p>
+            {multiDay && (
+              <div className="date-filter">
+                <label>
+                  From
+                  <input
+                    type="date"
+                    value={fromDate}
+                    min={spanMin}
+                    max={spanMax}
+                    onChange={(e) => setFromDate(e.target.value)}
+                  />
+                </label>
+                <label>
+                  To
+                  <input
+                    type="date"
+                    value={toDate}
+                    min={spanMin}
+                    max={spanMax}
+                    onChange={(e) => setToDate(e.target.value)}
+                  />
+                </label>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setFromDate(spanMin);
+                    setToDate(spanMax);
+                  }}
+                >
+                  Full range
+                </button>
+                <span className="df-count">
+                  {filteredAssignments.length} of {assignments.length} flights
+                </span>
+              </div>
+            )}
             <GanttChart
-              assignments={assignments}
+              assignments={filteredAssignments}
               onSelectFlight={setSelectedFlight}
               referenceTime={run.reference_time}
             />
           </section>
 
           <section className="assignment-section">
-            <h3>Assignments ({assignments.length})</h3>
+            <h3>
+              Assignments ({filteredAssignments.length}
+              {filteredAssignments.length !== assignments.length
+                ? ` of ${assignments.length}`
+                : ""}
+              )
+            </h3>
             <div className="table-wrapper">
               <table className="assignment-table">
                 <thead>
@@ -354,7 +427,7 @@ function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {assignments.map((a) => (
+                  {filteredAssignments.map((a) => (
                     <tr
                       key={`${a.tail_number}-${a.sequence_order}`}
                       className={a.turnaround_warning ? "row-warning" : ""}
