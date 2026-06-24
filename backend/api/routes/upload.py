@@ -150,7 +150,8 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 
 
 @router.post("/upload/flights")
-async def upload_flights(file: UploadFile = File(...), force: bool = False):
+async def upload_flights(file: UploadFile = File(...), force: bool = False,
+                         mode: str = "replace"):
     """
     Ingest a user-provided flight schedule (CSV).
 
@@ -267,10 +268,92 @@ async def upload_flights(file: UploadFile = File(...), force: bool = False):
         if errors:
             return {"ok": False, "flights_imported": 0, "errors": errors, "warnings": warnings}
 
-        # 3. Ingest into the ACTIVE plan only. Wipe this plan's flights + runs
-        #    (FK-safe); the global fleet and other plans are untouched.
+        # 3. Ingest into the ACTIVE plan only (the fleet and other plans are
+        #    untouched). "replace" wipes the plan and reloads; "merge" upserts
+        #    against the existing schedule and keeps the runs.
         from api.routes.plans import get_active_plan_id
+        from persistence.models import Plan
         plan_id = get_active_plan_id(db)
+        default_base = date.today()
+
+        def _build(origin, dest, dep_t, arr_t, fdate):
+            base = fdate or default_base
+            dep_dt = datetime.combine(base, dep_t)
+            arr_dt = datetime.combine(base, arr_t)
+            if arr_dt <= dep_dt:
+                arr_dt += timedelta(days=1)  # crosses midnight (overnight)
+            lat1, lon1 = airports[origin]
+            lat2, lon2 = airports[dest]
+            dist = int(round(_haversine_km(lat1, lon1, lat2, lon2)))
+            return base, dep_dt, arr_dt, dist
+
+        if mode == "merge":
+            # Upsert against the existing schedule, then reconcile within the
+            # CSV's date range. Runs (incl. a published plan) are kept; the
+            # schedule version is bumped so an affected run is flagged stale.
+            added = updated = unchanged = removed = 0
+            csv_ids: set[str] = set()
+            csv_dates = []
+            for (fid, origin, dest, dep_t, arr_t, fdate) in parsed:
+                sid = f"{plan_id}:{fid}"
+                if sid in csv_ids:
+                    continue  # duplicate id within the CSV (already warned)
+                base, dep_dt, arr_dt, dist = _build(origin, dest, dep_t, arr_t, fdate)
+                csv_ids.add(sid)
+                csv_dates.append(base)
+                existing = db.query(Flight).filter(Flight.flight_id == sid).first()
+                if existing is None:
+                    db.add(Flight(
+                        flight_id=sid, plan_id=plan_id, flight_number=fid,
+                        origin=origin, destination=dest,
+                        scheduled_departure=dep_dt, scheduled_arrival=arr_dt,
+                        distance_km=dist, status="scheduled",
+                    ))
+                    added += 1
+                elif (existing.deleted_at is not None
+                      or existing.origin != origin
+                      or existing.destination != dest
+                      or existing.scheduled_departure != dep_dt
+                      or existing.scheduled_arrival != arr_dt
+                      or existing.distance_km != dist
+                      or existing.status != "scheduled"):
+                    existing.deleted_at = None
+                    existing.flight_number = fid
+                    existing.origin = origin
+                    existing.destination = dest
+                    existing.scheduled_departure = dep_dt
+                    existing.scheduled_arrival = arr_dt
+                    existing.distance_km = dist
+                    existing.status = "scheduled"
+                    updated += 1
+                else:
+                    unchanged += 1
+
+            # Date-range reconcile: soft-delete plan flights inside [min,max]
+            # that the CSV no longer lists. Months the CSV omits are untouched.
+            if csv_dates:
+                min_d, max_d = min(csv_dates), max(csv_dates)
+                for f in db.query(Flight).filter(
+                    Flight.plan_id == plan_id, Flight.deleted_at == None  # noqa: E711
+                ).all():
+                    d = f.scheduled_departure.date()
+                    if min_d <= d <= max_d and f.flight_id not in csv_ids:
+                        f.deleted_at = datetime.utcnow()
+                        removed += 1
+
+            plan = db.query(Plan).filter(Plan.id == plan_id).first()
+            if plan is not None:
+                plan.schedule_updated_at = datetime.utcnow()
+            db.commit()
+
+            return {
+                "ok": True, "mode": "merge",
+                "added": added, "updated": updated,
+                "removed": removed, "unchanged": unchanged,
+                "errors": [], "warnings": warnings,
+            }
+
+        # --- replace (default): wipe this plan's flights + runs, then ingest ---
         _guard_published_plan(db, force, plan_id)
         run_ids = [
             r[0] for r in db.query(OptimizationRun.run_id)
@@ -288,28 +371,13 @@ async def upload_flights(file: UploadFile = File(...), force: bool = False):
         ).delete(synchronize_session=False)
         db.commit()
 
-        default_base = date.today()
         for (fid, origin, dest, dep_t, arr_t, fdate) in parsed:
-            base = fdate or default_base
-            dep_dt = datetime.combine(base, dep_t)
-            arr_dt = datetime.combine(base, arr_t)
-            if arr_dt <= dep_dt:
-                arr_dt += timedelta(days=1)  # overnight flight (crosses midnight)
-            lat1, lon1 = airports[origin]
-            lat2, lon2 = airports[dest]
-            dist = int(round(_haversine_km(lat1, lon1, lat2, lon2)))
+            base, dep_dt, arr_dt, dist = _build(origin, dest, dep_t, arr_t, fdate)
             db.add(Flight(
-                # Namespace the id per plan so the same CSV id can live in
-                # multiple plans; flight_number keeps the user's clean id.
-                flight_id=f"{plan_id}:{fid}",
-                plan_id=plan_id,
-                flight_number=fid,        # CSV has no separate number; reuse id
-                origin=origin,
-                destination=dest,
-                scheduled_departure=dep_dt,
-                scheduled_arrival=arr_dt,
-                distance_km=dist,
-                status="scheduled",
+                flight_id=f"{plan_id}:{fid}", plan_id=plan_id, flight_number=fid,
+                origin=origin, destination=dest,
+                scheduled_departure=dep_dt, scheduled_arrival=arr_dt,
+                distance_km=dist, status="scheduled",
             ))
         db.commit()
 
@@ -320,7 +388,7 @@ async def upload_flights(file: UploadFile = File(...), force: bool = False):
             })
 
         return {
-            "ok": True,
+            "ok": True, "mode": "replace",
             "flights_imported": len(parsed),
             "errors": [],
             "warnings": warnings,

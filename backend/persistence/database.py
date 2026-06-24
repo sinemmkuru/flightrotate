@@ -80,8 +80,19 @@ def ensure_schema():
             " name VARCHAR(80) NOT NULL,"
             " created_at DATETIME,"
             " is_active BOOLEAN NOT NULL DEFAULT 0,"
+            " schedule_updated_at DATETIME,"
             " deleted_at DATETIME)"
         ))
+        plan_cols = _columns(conn, "plans")
+        if plan_cols and "schedule_updated_at" not in plan_cols:
+            conn.execute(text(
+                "ALTER TABLE plans ADD COLUMN schedule_updated_at DATETIME"
+            ))
+            # Existing plans aren't stale: anchor to their creation time.
+            conn.execute(text(
+                "UPDATE plans SET schedule_updated_at = COALESCE(created_at, "
+                "'2000-01-01') WHERE schedule_updated_at IS NULL"
+            ))
         # Flights and runs are per-plan; the fleet (aircraft) stays global.
         for table in ("flights", "optimization_runs"):
             cols = _columns(conn, table)

@@ -41,6 +41,9 @@ class Plan(Base):
     name = Column(String(80), nullable=False)
     created_at = Column(DateTime, default=utcnow)
     is_active = Column(Boolean, default=False, nullable=False)  # one active at a time
+    # Bumped whenever the plan's flight schedule changes (merge upload). A run
+    # created before this is "stale" — the schedule moved under it.
+    schedule_updated_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
 
 

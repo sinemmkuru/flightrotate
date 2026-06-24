@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from persistence.database import get_db
-from persistence.models import OptimizationRun, Assignment, Flight, Aircraft, AuditLog
+from persistence.models import OptimizationRun, Assignment, Flight, Aircraft, AuditLog, Plan
 from api.routes.plans import get_active_plan_id
 from api.schemas.optimization import (
     KPI, ObjectiveWeights, RunSummary, AssignmentRow,
@@ -121,12 +121,21 @@ def get_published_plan(db: Session = Depends(get_db)):
     }
     missing_f = sum(1 for a in assigns if a.flight_id not in live_flights)
     missing_t = sum(1 for a in assigns if a.tail_number not in live_tails)
-    if missing_f or missing_t:
-        parts = []
-        if missing_f:
-            parts.append(f"{missing_f} assigned flight(s) no longer exist")
-        if missing_t:
-            parts.append(f"{missing_t} assignment(s) use a removed/inactive aircraft")
+
+    parts = []
+    if missing_f:
+        parts.append(f"{missing_f} assigned flight(s) no longer exist")
+    if missing_t:
+        parts.append(f"{missing_t} assignment(s) use a removed/inactive aircraft")
+    # The schedule changed after this run was optimized (e.g. a merge upload that
+    # added/updated/removed flights while keeping the run).
+    plan = db.query(Plan).filter(Plan.id == run.plan_id).first()
+    if (plan is not None and plan.schedule_updated_at is not None
+            and run.created_at is not None
+            and run.created_at < plan.schedule_updated_at):
+        parts.append("the schedule changed after it was optimized")
+
+    if parts:
         summary.stale = True
         summary.stale_detail = (
             "Published plan is out of sync with the current schedule: "
