@@ -47,6 +47,13 @@ class OptimizeRequest(BaseModel):
     parameters: Optional[GAParameters] = None
     seed: Optional[int] = None
     time_limit_seconds: Optional[float] = Field(None, ge=1.0, le=600.0)
+    # Planning "as-of" time. Flights departing before it are PAST: they are not
+    # re-optimized but locked to their tail from the most recent prior run
+    # (history); only flights at/after it are optimized. Mirrors a real OCC,
+    # which never re-plans a flight whose departure has already passed. Naive
+    # local datetime (same basis as the flight schedule). Defaults to the
+    # server's current time when omitted.
+    reference_time: Optional[datetime] = None
 
 
 class OptimizeResponse(BaseModel):
@@ -74,6 +81,9 @@ class RunSummary(BaseModel):
     algorithm: str
     weights: ObjectiveWeights
     kpi: KPI
+    # Planning "as-of" time used for this run, if any. Flights before it were
+    # locked to a prior plan (history); the UI can shade them as past.
+    reference_time: Optional[datetime] = None
 
 
 class AssignmentRow(BaseModel):

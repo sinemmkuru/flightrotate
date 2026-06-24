@@ -36,7 +36,7 @@ from api.schemas.optimization import (
 from engine.graph_builder import build_flight_connection_graph
 from engine.genetic_algorithm import run_genetic_algorithm, DEFAULT_GA_PARAMS
 from engine.cost_model import flight_fuel_kg, fuel_cost_usd
-from engine.solution import DEFAULT_WEIGHTS
+from engine.solution import DEFAULT_WEIGHTS, build_aircraft_caps, evaluate_solution
 
 
 router = APIRouter()
@@ -104,9 +104,47 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
             detail=f"Weights must sum to ~1.0 (got {weight_total:.3f})",
         )
 
+    # --- 3. Resolve the planning reference time ("now" by default) ---
+    # Flights departing before this are PAST: they are not re-optimized, but
+    # locked to their tail from the most recent prior run (history). Only
+    # flights at or after the reference time are optimized. This mirrors a real
+    # OCC, which never re-plans a flight whose departure has already passed.
+    reference_time = request.reference_time or datetime.now()
+    future_flights = [f for f in flights if f.scheduled_departure >= reference_time]
+    past_flights = [f for f in flights if f.scheduled_departure < reference_time]
+
+    if not future_flights:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No flights at or after the reference time "
+                f"({reference_time.isoformat()}); there is nothing to optimize."
+            ),
+        )
+
+    # Lock past flights to their tail from the latest prior run, if one exists.
+    prior_run = (
+        db.query(OptimizationRun)
+        .filter(OptimizationRun.deleted_at.is_(None))
+        .order_by(OptimizationRun.created_at.desc())
+        .first()
+    )
+    locked_past: dict[str, str] = {}
+    if past_flights and prior_run is not None:
+        past_ids = {f.flight_id for f in past_flights}
+        for a in (
+            db.query(Assignment)
+            .filter(Assignment.run_id == prior_run.run_id)
+            .all()
+        ):
+            if a.flight_id in past_ids:
+                locked_past[a.flight_id] = a.tail_number
+
     # --- 4. Build the FCG ---
-    # Pass per-airport minimum turnarounds so each connection respects the
-    # turnaround time of the airport where the aircraft is on the ground.
+    # Per-airport minimum turnarounds so each connection respects the turnaround
+    # of the airport where the aircraft is on the ground. The optimization graph
+    # spans only the FUTURE flights; a full-flight graph is built afterwards to
+    # score the combined (locked-past + optimized-future) plan.
     from persistence.models import Airport
     airport_turnarounds = {
         ap.iata_code: ap.min_turnaround_min
@@ -114,7 +152,7 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
         if ap.min_turnaround_min is not None
     }
     graph = build_flight_connection_graph(
-        flights, airport_turnarounds=airport_turnarounds
+        future_flights, airport_turnarounds=airport_turnarounds
     )
 
     # --- 5. Prepare GA parameters ---
@@ -134,13 +172,13 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
     else:
         params_dict = DEFAULT_GA_PARAMS
 
-    # --- 6. Resolve the solver and run it ---
+    # --- 6. Resolve the solver (by FUTURE instance size) and run it ---
     # "auto" picks a concrete solver by instance size; the resolved name is what
     # we store and report, so the run record always names a real algorithm.
     requested_algorithm = request.algorithm
     if requested_algorithm == "auto":
         effective_algorithm = (
-            "cp_sat" if len(flights) <= AUTO_CP_SAT_MAX_FLIGHTS else "genetic"
+            "cp_sat" if len(future_flights) <= AUTO_CP_SAT_MAX_FLIGHTS else "genetic"
         )
     else:
         effective_algorithm = requested_algorithm
@@ -152,7 +190,7 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
         if request.time_limit_seconds is not None:
             cp_kwargs["time_limit_seconds"] = request.time_limit_seconds
         result = run_cp_sat(
-            flights=flights,
+            flights=future_flights,
             aircraft_list=aircraft_list,
             graph=graph,
             weights=weights_dict,
@@ -161,7 +199,7 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
         cp_status = result.status
     else:
         result = run_genetic_algorithm(
-            flights=flights,
+            flights=future_flights,
             aircraft_list=aircraft_list,
             graph=graph,
             weights=weights_dict,
@@ -169,9 +207,33 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
             seed=request.seed,
         )
 
-    # --- 7. Persist the run ---
+    # --- 7. Combine locked past + optimized future into one plan ---
+    all_flights_by_id = {f.flight_id: f for f in flights}
+    combined_solution: dict[str, str | None] = {fid: None for fid in all_flights_by_id}
+    for fid, tail in result.best_solution.items():
+        combined_solution[fid] = tail
+    combined_solution.update(locked_past)  # the past is history; it wins
+
+    # Score the WHOLE displayed plan (locked past + optimized future) so the
+    # dashboard KPIs match the Gantt. The optimization graph only spans future
+    # flights, so a full-flight graph is needed here.
+    full_graph = build_flight_connection_graph(
+        flights, airport_turnarounds=airport_turnarounds
+    )
+    caps = build_aircraft_caps(aircraft_list)
+    plan_bd = evaluate_solution(
+        combined_solution, all_flights_by_id, full_graph, weights_dict, caps
+    )
+
+    # --- 8. Persist the run ---
     run_id = str(uuid.uuid4())
-    fuel_kg = result.best_fitness.total_fuel_kg
+    fuel_kg = plan_bd.total_fuel_kg
+    params_record = {
+        **params_dict,
+        "reference_time": reference_time.isoformat(),
+        "locked_past_flights": len(locked_past),
+        "future_flights": len(future_flights),
+    }
     new_run = OptimizationRun(
         run_id=run_id,
         created_at=datetime.now(timezone.utc),
@@ -179,23 +241,23 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
         weight_idle=w.idle,
         weight_fuel=w.fuel,
         weight_coverage=w.coverage,
-        parameters=params_dict,
-        coverage=result.best_fitness.coverage,
-        idle_minutes=result.best_fitness.total_idle_minutes,
+        parameters=params_record,
+        coverage=plan_bd.coverage,
+        idle_minutes=plan_bd.total_idle_minutes,
         fuel_kg=fuel_kg,
         fuel_cost_usd=fuel_cost_usd(fuel_kg),
         solve_time_seconds=result.elapsed_seconds,
-        total_flights=result.best_fitness.total_flights,
-        assigned_flights=result.best_fitness.assigned_count,
+        total_flights=plan_bd.total_flights,
+        assigned_flights=plan_bd.assigned_count,
     )
     db.add(new_run)
 
-    # --- 8. Persist the assignments ---
+    # --- 9. Persist the assignments (combined plan) ---
     # Group flights by aircraft so we can compute sequence_order and
-    # turnaround_minutes for each assigned flight
-    flights_by_id = {f.flight_id: f for f in flights}
+    # turnaround_minutes for each assigned flight.
+    flights_by_id = all_flights_by_id
     by_aircraft: dict[str, list[str]] = {}
-    for flight_id, tail in result.best_solution.items():
+    for flight_id, tail in combined_solution.items():
         if tail is None:
             continue
         by_aircraft.setdefault(tail, []).append(flight_id)
@@ -235,12 +297,21 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
     if requested_algorithm == "auto":
         solver_label = f"auto -> {solver_label}"
 
-    return OptimizeResponse(
-        run_id=run_id,
-        status="completed",
-        message=(
+    # The message reports the OPTIMISATION's own result (the future flights it
+    # actually solved). When there is no locked past this equals the whole plan,
+    # so non-time-aware runs read exactly as before. The persisted KPIs above
+    # cover the whole displayed plan (locked past + optimised future).
+    if locked_past:
+        message = (
+            f"Optimization complete in {result.elapsed_seconds:.1f}s. "
+            f"Future coverage: {result.best_fitness.coverage:.1%} "
+            f"({len(future_flights)} open flights) · "
+            f"{len(locked_past)} past flight(s) locked [{solver_label}]"
+        )
+    else:
+        message = (
             f"Optimization complete in {result.elapsed_seconds:.1f}s. "
             f"Coverage: {result.best_fitness.coverage:.1%}, "
             f"Fitness: {result.best_fitness.fitness:.4f} [{solver_label}]"
-        ),
-    )
+        )
+    return OptimizeResponse(run_id=run_id, status="completed", message=message)

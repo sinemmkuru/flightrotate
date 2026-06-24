@@ -34,6 +34,13 @@ import FlightDetailPanel from "../components/FlightDetailPanel";
 
 import "./Dashboard.css";
 
+// "YYYY-MM-DDTHH:MM" for the current local time, for a datetime-local input.
+function nowLocalInput() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
 function Dashboard() {
   const { currentRunId, setCurrentRunId, isOptimizing, setIsOptimizing } =
     useAppStore();
@@ -44,6 +51,9 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedFlight, setSelectedFlight] = useState(null);
+  // Planning "as-of" time: flights before it are locked to the prior plan
+  // (history); only later flights are optimized. Defaults to now.
+  const [asOf, setAsOf] = useState(nowLocalInput);
 
   // On mount: load runs, pick the newest, fetch its assignments + baseline
   useEffect(() => {
@@ -92,6 +102,7 @@ function Dashboard() {
         algorithm: "genetic",
         weights: { coverage: 0.5, idle: 0.25, fuel: 0.25 },
         seed: 42,
+        reference_time: asOf,
       });
       // Reload to pull in the new run
       await loadLatestRun();
@@ -137,6 +148,14 @@ function Dashboard() {
             </p>
           )}
         </div>
+        <label className="asof-field" title="Flights before this time are locked to the prior plan; only later flights are optimized.">
+          <span>Plan as of</span>
+          <input
+            type="datetime-local"
+            value={asOf}
+            onChange={(e) => setAsOf(e.target.value)}
+          />
+        </label>
         <button
           onClick={handleRunOptimization}
           disabled={isOptimizing}
@@ -255,6 +274,7 @@ function Dashboard() {
             <GanttChart
               assignments={assignments}
               onSelectFlight={setSelectedFlight}
+              referenceTime={run.reference_time}
             />
           </section>
 

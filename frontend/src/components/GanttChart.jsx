@@ -40,7 +40,7 @@ import "./GanttChart.css";
 const MAX_IDLE_MINUTES = 240;
 const DAY_MS = 1000 * 60 * 60 * 24;
 
-function GanttChart({ assignments, onSelectFlight }) {
+function GanttChart({ assignments, onSelectFlight, referenceTime }) {
   const containerRef = useRef(null);
   const timelineRef = useRef(null);
 
@@ -75,6 +75,9 @@ function GanttChart({ assignments, onSelectFlight }) {
     const maxTime = new Date(Math.max(...allTimes));
     const multiDay = maxTime.getTime() - minTime.getTime() > DAY_MS;
 
+    // Planning "as-of" boundary: flights departing before it are locked history.
+    const refDate = referenceTime ? new Date(referenceTime) : null;
+
     // --- Build flight items (one block per flight) ---
     const itemList = assignments.map((a) => ({
       id: `${a.tail_number}-${a.sequence_order}`,
@@ -82,7 +85,12 @@ function GanttChart({ assignments, onSelectFlight }) {
       start: a.scheduled_departure,
       end: a.scheduled_arrival,
       content: `${a.flight_number}<br/><small>${a.origin} → ${a.destination}</small>`,
-      className: a.turnaround_warning ? "flight-warning" : "flight-normal",
+      className:
+        refDate && new Date(a.scheduled_departure) < refDate
+          ? "flight-locked"
+          : a.turnaround_warning
+            ? "flight-warning"
+            : "flight-normal",
       title:
         `${a.flight_number}<br/>` +
         `${a.origin} → ${a.destination}<br/>` +
@@ -198,6 +206,17 @@ function GanttChart({ assignments, onSelectFlight }) {
       options,
     );
 
+    // Mark the planning "as-of" boundary: a labeled vertical line. Flights to
+    // its left are locked history; to its right is what the optimizer planned.
+    if (refDate) {
+      try {
+        timelineRef.current.addCustomTime(refDate, "planstart");
+        timelineRef.current.setCustomTimeMarker("Plan start", "planstart", false);
+      } catch {
+        // Boundary outside the rendered range — nothing to mark.
+      }
+    }
+
     // Open the flight detail panel when a flight block is clicked.
     // props.item is the clicked item's id. Flight items use the id
     // `${tail}-${seq}`, so the lookup below only matches real legs - clicks
@@ -218,7 +237,7 @@ function GanttChart({ assignments, onSelectFlight }) {
         timelineRef.current = null;
       }
     };
-  }, [assignments, onSelectFlight]);
+  }, [assignments, onSelectFlight, referenceTime]);
 
   return (
     <div className="gantt-wrapper">

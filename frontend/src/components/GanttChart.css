@@ -56,6 +56,29 @@
   width: 2px;
 }
 
+/* Planning "as-of" boundary marker (distinct from the live "now" line). */
+.vis-custom-time.planstart {
+  background-color: var(--accent-orange, #e08a3c);
+  width: 2px;
+}
+.vis-custom-time.planstart > .vis-custom-time-marker {
+  background-color: var(--accent-orange, #e08a3c);
+  color: #1a1a1a;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Locked (past / already-flown) leg: dim and dashed, not re-optimized. */
+.vis-item.flight-locked {
+  background-color: rgba(136, 135, 128, 0.16);
+  border: 1px dashed rgba(136, 135, 128, 0.6);
+  color: var(--text-secondary, #9a988f);
+  font-size: 11px;
+  opacity: 0.75;
+}
+
 /* --- Flight blocks --- */
 
 .vis-item.flight-normal {

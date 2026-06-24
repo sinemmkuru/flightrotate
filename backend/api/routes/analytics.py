@@ -39,6 +39,7 @@ def _run_to_summary(run: OptimizationRun) -> RunSummary:
             fuel_cost_usd=run.fuel_cost_usd or 0.0,
             solve_time_seconds=run.solve_time_seconds or 0.0,
         ),
+        reference_time=(run.parameters or {}).get("reference_time"),
     )
 
 

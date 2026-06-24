@@ -42,6 +42,24 @@
   color: var(--accent-red);
 }
 
+/* Planning "as-of" time picker in the header. */
+.asof-field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.asof-field input {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
 /* --- Buttons --- */
 
 .btn {
