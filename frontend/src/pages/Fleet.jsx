@@ -15,6 +15,7 @@ import {
   updateAircraft,
   deleteAircraft,
 } from "../api/client";
+import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 import "./Management.css";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
@@ -47,6 +48,7 @@ function errDetail(e, fallback) {
 }
 
 function Fleet() {
+  const isAdmin = useAuthStore(selectIsAdmin);
   const [aircraft, setAircraft] = useState([]);
   const [airports, setAirports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -267,9 +269,11 @@ function Fleet() {
           </p>
         </div>
         <div className="head-actions">
-          <button className="mgmt-btn mgmt-btn-primary" onClick={openAdd}>
-            + Add aircraft
-          </button>
+          {isAdmin && (
+            <button className="mgmt-btn mgmt-btn-primary" onClick={openAdd}>
+              + Add aircraft
+            </button>
+          )}
         </div>
       </header>
 
@@ -318,18 +322,24 @@ function Fleet() {
                   <td>{statusBadge(a.status)}</td>
                   <td>
                     <div className="mgmt-actions">
-                      <button
-                        className="mgmt-action"
-                        onClick={() => openEdit(a)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="mgmt-action danger"
-                        onClick={() => remove(a)}
-                      >
-                        Delete
-                      </button>
+                      {isAdmin ? (
+                        <>
+                          <button
+                            className="mgmt-action"
+                            onClick={() => openEdit(a)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="mgmt-action danger"
+                            onClick={() => remove(a)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <span className="mgmt-readonly">—</span>
+                      )}
                     </div>
                   </td>
                 </tr>

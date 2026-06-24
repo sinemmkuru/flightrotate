@@ -11,6 +11,8 @@
 
 import axios from "axios";
 
+import useAuthStore from "../store/useAuthStore";
+
 const API_BASE_URL = "http://localhost:8000/api";
 
 const client = axios.create({
@@ -18,6 +20,41 @@ const client = axios.create({
   timeout: 60000, // 60s - long enough for a synchronous GA run
   headers: { "Content-Type": "application/json" },
 });
+
+// Attach the bearer token (if logged in) to every request. Single choke point
+// so individual API calls don't have to know about auth.
+client.interceptors.request.use((config) => {
+  const token = useAuthStore.getState().token;
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// If the server rejects the token (401 = unknown/expired token, e.g. after a
+// backend restart) log the user out so they re-authenticate. A 403 (viewer
+// attempting an admin action) is left for the caller/UI to report.
+client.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response && err.response.status === 401) {
+      useAuthStore.getState().logout();
+    }
+    return Promise.reject(err);
+  }
+);
+
+// Exchange credentials for a bearer token + role. Caller stores them via the
+// auth store. Throws on bad credentials (401).
+export async function login(username, password) {
+  const res = await client.post("/login", { username, password });
+  return res.data; // { token, role }
+}
+
+// The bearer header for the raw fetch() uploads below (which bypass the axios
+// instance and therefore its request interceptor).
+function authHeader() {
+  const token = useAuthStore.getState().token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 // --- Optimization endpoints ---
 
@@ -128,6 +165,7 @@ export async function uploadFlights(file, force = false, mode = "replace") {
   const qs = params.toString();
   const res = await fetch(`${base}/upload/flights${qs ? `?${qs}` : ""}`, {
     method: "POST",
+    headers: authHeader(),
     body: form,
   });
   const data = await res.json().catch(() => ({}));
@@ -145,6 +183,7 @@ export async function uploadAircraft(file, force = false) {
   const base = client.defaults.baseURL || "";
   const res = await fetch(`${base}/upload/aircraft${force ? "?force=true" : ""}`, {
     method: "POST",
+    headers: authHeader(),
     body: form,
   });
   const data = await res.json().catch(() => ({}));

@@ -14,6 +14,7 @@ import {
   deleteAirport,
   getAirportLookup,
 } from "../api/client";
+import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 import "./Management.css";
 
 function emptyDraft() {
@@ -34,6 +35,7 @@ function errDetail(e, fallback) {
 }
 
 function Airports() {
+  const isAdmin = useAuthStore(selectIsAdmin);
   const [airports, setAirports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -258,9 +260,11 @@ function Airports() {
           </p>
         </div>
         <div className="head-actions">
-          <button className="mgmt-btn mgmt-btn-primary" onClick={openAdd}>
-            + Add airport
-          </button>
+          {isAdmin && (
+            <button className="mgmt-btn mgmt-btn-primary" onClick={openAdd}>
+              + Add airport
+            </button>
+          )}
         </div>
       </header>
 
@@ -316,18 +320,24 @@ function Airports() {
                   </td>
                   <td>
                     <div className="mgmt-actions">
-                      <button
-                        className="mgmt-action"
-                        onClick={() => openEdit(a)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="mgmt-action danger"
-                        onClick={() => remove(a)}
-                      >
-                        Delete
-                      </button>
+                      {isAdmin ? (
+                        <>
+                          <button
+                            className="mgmt-action"
+                            onClick={() => openEdit(a)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="mgmt-action danger"
+                            onClick={() => remove(a)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <span className="mgmt-readonly">—</span>
+                      )}
                     </div>
                   </td>
                 </tr>

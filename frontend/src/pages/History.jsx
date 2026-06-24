@@ -12,12 +12,14 @@ To compare two runs side by side, use the Compare page.
 */
 import { useEffect, useMemo, useState } from "react";
 import { listRuns, publishRun, unpublishRun } from "../api/client";
+import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 import "./History.css";
 
 // Dev/demo API base; change if the backend is deployed elsewhere.
 const API_BASE = "http://localhost:8000/api";
 
 function History() {
+  const isAdmin = useAuthStore(selectIsAdmin);
   const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -206,12 +208,16 @@ function History() {
                       {isPublished && (
                         <span className="published-badge">PUBLISHED</span>
                       )}
-                      <button
-                        className="plan-btn"
-                        onClick={() => setPlan(run.run_id, !isPublished)}
-                      >
-                        {isPublished ? "Unpublish" : "Publish"}
-                      </button>
+                      {isAdmin ? (
+                        <button
+                          className="plan-btn"
+                          onClick={() => setPlan(run.run_id, !isPublished)}
+                        >
+                          {isPublished ? "Unpublish" : "Publish"}
+                        </button>
+                      ) : (
+                        !isPublished && <span className="run-cell">—</span>
+                      )}
                     </td>
                     <td className="export-cell">
                       <a

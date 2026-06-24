@@ -19,6 +19,7 @@ import { useNavigate, Link } from "react-router-dom";
 
 import { runOptimizationAsync, getOptimizeStatus, getStatus } from "../api/client";
 import useAppStore from "../store/useAppStore";
+import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 
 import "./Configure.css";
 
@@ -31,6 +32,7 @@ const PRESETS = {
 function Configure() {
   const navigate = useNavigate();
   const { isOptimizing, setIsOptimizing } = useAppStore();
+  const isAdmin = useAuthStore(selectIsAdmin);
 
   const [weights, setWeights] = useState(PRESETS.balanced);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -264,10 +266,15 @@ function Configure() {
         <button
           className="btn btn-primary btn-large"
           onClick={handleRun}
-          disabled={isOptimizing || noData}
+          disabled={isOptimizing || noData || !isAdmin}
         >
           {isOptimizing ? "Running optimization..." : "Run optimization"}
         </button>
+        {!isAdmin && (
+          <p className="viewer-note">
+            Viewer modundasınız — optimizasyon çalıştırmak için admin gerekir.
+          </p>
+        )}
         {isOptimizing && (
           <div className="optimize-progress">
             {progress && progress.total_generations ? (

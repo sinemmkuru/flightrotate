@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from persistence.database import get_db
 from persistence.models import Plan, Flight, Aircraft, OptimizationRun, utcnow
+from api.auth import require_admin
 
 router = APIRouter()
 
@@ -135,7 +136,8 @@ def active_plan(db: Session = Depends(get_db)):
 
 
 @router.post("/plans", response_model=PlanOut, status_code=201)
-def create_plan(body: PlanCreate, db: Session = Depends(get_db)):
+def create_plan(body: PlanCreate, db: Session = Depends(get_db),
+                _admin: str = Depends(require_admin)):
     """Create a new EMPTY plan and make it active."""
     name = body.name.strip() or "Untitled plan"
     _deactivate_all(db)
@@ -147,7 +149,8 @@ def create_plan(body: PlanCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/plans/{plan_id}/activate", response_model=PlanOut)
-def activate_plan(plan_id: int, db: Session = Depends(get_db)):
+def activate_plan(plan_id: int, db: Session = Depends(get_db),
+                  _admin: str = Depends(require_admin)):
     """Make a plan the active one (deactivating any other)."""
     plan = (
         db.query(Plan)
@@ -164,7 +167,8 @@ def activate_plan(plan_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/plans/{plan_id}", response_model=PlanOut)
-def rename_plan(plan_id: int, body: PlanUpdate, db: Session = Depends(get_db)):
+def rename_plan(plan_id: int, body: PlanUpdate, db: Session = Depends(get_db),
+                _admin: str = Depends(require_admin)):
     """Rename a plan."""
     plan = (
         db.query(Plan)
@@ -180,7 +184,8 @@ def rename_plan(plan_id: int, body: PlanUpdate, db: Session = Depends(get_db)):
 
 
 @router.delete("/plans/{plan_id}")
-def delete_plan(plan_id: int, db: Session = Depends(get_db)):
+def delete_plan(plan_id: int, db: Session = Depends(get_db),
+                _admin: str = Depends(require_admin)):
     """
     Soft-delete a plan. Its data stays in the tables but is no longer reachable
     (queries scope to the active plan). If the deleted plan was active, another

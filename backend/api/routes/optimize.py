@@ -40,6 +40,7 @@ from engine.genetic_algorithm import run_genetic_algorithm, DEFAULT_GA_PARAMS
 from engine.cost_model import flight_fuel_kg, fuel_cost_usd
 from engine.solution import DEFAULT_WEIGHTS, build_aircraft_caps, evaluate_solution
 from api.routes.plans import get_active_plan_id
+from api.auth import require_admin
 
 
 router = APIRouter()
@@ -51,7 +52,8 @@ AUTO_CP_SAT_MAX_FLIGHTS = 400
 
 
 @router.post("/optimize", response_model=OptimizeResponse)
-def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
+def optimize(request: OptimizeRequest, db: Session = Depends(get_db),
+             _admin: str = Depends(require_admin)):
     """Run an optimization synchronously and return when it finishes."""
     return _execute_optimization(request, db)
 
@@ -407,7 +409,8 @@ def _set_job(job_id: str, **fields) -> None:
 
 
 @router.post("/optimize/async")
-def optimize_async(request: OptimizeRequest, db: Session = Depends(get_db)):
+def optimize_async(request: OptimizeRequest, db: Session = Depends(get_db),
+                   _admin: str = Depends(require_admin)):
     """
     Start an optimization in the background; return a job id at once.
 

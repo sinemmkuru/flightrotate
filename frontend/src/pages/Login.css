@@ -1,0 +1,88 @@
+/* Login screen: centered card on the app's dark background. */
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-primary);
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-brand {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.login-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: -8px;
+  margin-bottom: 8px;
+}
+
+.login-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.login-input {
+  padding: 9px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.login-button {
+  margin-top: 6px;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--accent-blue);
+  color: #0d1117;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.login-error {
+  font-size: 13px;
+  color: #f85149;
+}
+
+.login-hint {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}

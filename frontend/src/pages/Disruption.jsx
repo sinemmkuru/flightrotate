@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 
 import { listRuns, getAssignments, disrupt } from "../api/client";
+import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 import "./Disruption.css";
 
 function fmtTime(iso) {
@@ -21,6 +22,7 @@ function fmtTime(iso) {
 }
 
 function Disruption() {
+  const isAdmin = useAuthStore(selectIsAdmin);
   const [assignments, setAssignments] = useState([]);
   const [hasRun, setHasRun] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
@@ -199,6 +201,7 @@ function Disruption() {
               onClick={handleSimulate}
               disabled={
                 running ||
+                !isAdmin ||
                 (dtype === "ground_aircraft"
                   ? !tail
                   : !flightId) ||
@@ -207,6 +210,11 @@ function Disruption() {
             >
               {running ? "Simulating..." : "Simulate disruption"}
             </button>
+            {!isAdmin && (
+              <p className="viewer-note">
+                Viewer modundasınız — kesinti simülasyonu için admin gerekir.
+              </p>
+            )}
           </section>
 
           {error && <div className="error-banner">{error}</div>}

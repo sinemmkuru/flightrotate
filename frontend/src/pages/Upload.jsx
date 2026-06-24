@@ -21,6 +21,7 @@ import {
   uploadFlights,
   uploadAircraft,
 } from "../api/client";
+import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 import "./Upload.css";
 
 const SIZE_PRESETS = [
@@ -82,7 +83,7 @@ function formatUploadWarning(w) {
   }
 }
 
-function UploadCard({ title, columns, kind, state, onFile }) {
+function UploadCard({ title, columns, kind, state, onFile, disabled = false }) {
   const [dragOver, setDragOver] = useState(false);
   const { uploading, result, file } = state;
   const done = result?.ok;
@@ -113,6 +114,7 @@ function UploadCard({ title, columns, kind, state, onFile }) {
         onDrop={(e) => {
           e.preventDefault();
           setDragOver(false);
+          if (disabled) return;
           onFile(e.dataTransfer.files?.[0]);
         }}
       >
@@ -120,6 +122,7 @@ function UploadCard({ title, columns, kind, state, onFile }) {
           type="file"
           accept=".csv"
           style={{ display: "none" }}
+          disabled={disabled}
           onChange={(e) => onFile(e.target.files?.[0])}
         />
         <div className="csv-icon">{done ? "✅" : "📄"}</div>
@@ -288,6 +291,7 @@ function FlightPreview({ file, flightsImported, fleetLoaded }) {
 }
 
 function Upload() {
+  const isAdmin = useAuthStore(selectIsAdmin);
   const [selectedSize, setSelectedSize] = useState("medium");
   const [generating, setGenerating] = useState(false);
   const [lastGenerated, setLastGenerated] = useState(null);
@@ -408,6 +412,13 @@ function Upload() {
         </p>
       </header>
 
+      {!isAdmin && (
+        <div className="error-banner">
+          Viewer modundasınız — veri yükleme ve örnek üretme yalnızca admin
+          yetkisiyle yapılabilir.
+        </div>
+      )}
+
       {/* --- Current data status --- */}
       <section className="card status-card">
         <div className="status-row">
@@ -472,7 +483,7 @@ function Upload() {
 
         <button
           onClick={() => handleGenerate()}
-          disabled={generating}
+          disabled={generating || !isAdmin}
           className="btn btn-primary btn-large"
         >
           {generating ? "Generating..." : "Generate sample"}
@@ -524,6 +535,7 @@ function Upload() {
           kind="flights"
           state={flightUpload}
           onFile={(f) => doUpload("flights", f)}
+          disabled={!isAdmin}
         />
         <UploadCard
           title="Aircraft fleet"
@@ -536,6 +548,7 @@ function Upload() {
           kind="aircraft"
           state={aircraftUpload}
           onFile={(f) => doUpload("aircraft", f)}
+          disabled={!isAdmin}
         />
       </div>
 

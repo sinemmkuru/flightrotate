@@ -14,9 +14,11 @@ import {
   renamePlan,
   deletePlan,
 } from "../api/client";
+import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 import "./PlanSwitcher.css";
 
 function PlanSwitcher() {
+  const isAdmin = useAuthStore(selectIsAdmin);
   const [plans, setPlans] = useState([]);
   const [error, setError] = useState(false);
 
@@ -78,6 +80,7 @@ function PlanSwitcher() {
         className="ps-select"
         value={active ? active.id : ""}
         onChange={onSwitch}
+        disabled={!isAdmin}
       >
         {plans.map((p) => (
           <option key={p.id} value={p.id}>
@@ -90,17 +93,19 @@ function PlanSwitcher() {
           {active.flights} flights · {active.runs} run{active.runs === 1 ? "" : "s"}
         </div>
       )}
-      <div className="ps-actions">
-        <button onClick={onNew} title="New plan">
-          ＋ New
-        </button>
-        <button onClick={onRename} title="Rename" disabled={!active}>
-          Rename
-        </button>
-        <button onClick={onDelete} title="Delete" disabled={!active || plans.length <= 1}>
-          Delete
-        </button>
-      </div>
+      {isAdmin && (
+        <div className="ps-actions">
+          <button onClick={onNew} title="New plan">
+            ＋ New
+          </button>
+          <button onClick={onRename} title="Rename" disabled={!active}>
+            Rename
+          </button>
+          <button onClick={onDelete} title="Delete" disabled={!active || plans.length <= 1}>
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }

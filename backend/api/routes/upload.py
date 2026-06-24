@@ -16,9 +16,10 @@ import math
 from datetime import datetime, date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from pydantic import BaseModel, Field
 
+from api.auth import require_admin
 from services.flight_generator import generate_flights
 from persistence.database import SessionLocal
 from persistence.models import (
@@ -86,7 +87,7 @@ class SampleResponse(BaseModel):
 
 
 @router.post("/sample", response_model=SampleResponse)
-def generate_sample(request: SampleRequest):
+def generate_sample(request: SampleRequest, _admin: str = Depends(require_admin)):
     """
     Generates a synthetic flight schedule and aircraft fleet.
     If clear_existing is True (default), wipes flights and aircraft before
@@ -151,7 +152,8 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 
 @router.post("/upload/flights")
 async def upload_flights(file: UploadFile = File(...), force: bool = False,
-                         mode: str = "replace"):
+                         mode: str = "replace",
+                         _admin: str = Depends(require_admin)):
     """
     Ingest a user-provided flight schedule (CSV).
 
@@ -400,7 +402,8 @@ async def upload_flights(file: UploadFile = File(...), force: bool = False,
 
 
 @router.post("/upload/aircraft")
-async def upload_aircraft(file: UploadFile = File(...), force: bool = False):
+async def upload_aircraft(file: UploadFile = File(...), force: bool = False,
+                          _admin: str = Depends(require_admin)):
     """
     Ingest a user-provided aircraft fleet (CSV).
 

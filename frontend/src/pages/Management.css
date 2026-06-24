@@ -3,6 +3,11 @@ Shared styles for the Fleet / Airports management pages.
 Sortable table + status badges + add/edit modal form, on the dark theme,
 reusing the app's CSS variables with safe fallbacks.
 */
+
+/* Placeholder shown in the actions column for read-only (viewer) users. */
+.mgmt-readonly {
+  color: var(--text-secondary, #8b949e);
+}
 .mgmt {
   display: flex;
   flex-direction: column;

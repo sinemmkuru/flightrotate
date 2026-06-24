@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from persistence.database import get_db
 from persistence.models import Aircraft, Airport, Flight
+from api.auth import require_admin
 
 router = APIRouter()
 
@@ -198,7 +199,8 @@ def list_aircraft(db: Session = Depends(get_db)):
 # Aircraft - write
 # --------------------------------------------------------------------------
 @router.post("/fleet/aircraft", response_model=AircraftRow, status_code=201)
-def create_aircraft(body: AircraftCreate, db: Session = Depends(get_db)):
+def create_aircraft(body: AircraftCreate, db: Session = Depends(get_db),
+                    _admin: str = Depends(require_admin)):
     """Create a new aircraft, or revive one previously soft-deleted."""
     tail = body.tail_number.strip().upper()
     if not tail:
@@ -239,7 +241,8 @@ def create_aircraft(body: AircraftCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/fleet/aircraft/{tail}", response_model=AircraftRow)
-def update_aircraft(tail: str, body: AircraftUpdate, db: Session = Depends(get_db)):
+def update_aircraft(tail: str, body: AircraftUpdate, db: Session = Depends(get_db),
+                    _admin: str = Depends(require_admin)):
     """Update mutable fields of an existing aircraft."""
     ac = (
         db.query(Aircraft)
@@ -266,7 +269,8 @@ def update_aircraft(tail: str, body: AircraftUpdate, db: Session = Depends(get_d
 
 
 @router.delete("/fleet/aircraft/{tail}")
-def delete_aircraft(tail: str, db: Session = Depends(get_db)):
+def delete_aircraft(tail: str, db: Session = Depends(get_db),
+                    _admin: str = Depends(require_admin)):
     """Soft-delete an aircraft (removes it from the active fleet)."""
     ac = (
         db.query(Aircraft)
@@ -370,7 +374,8 @@ def list_airports(db: Session = Depends(get_db)):
 # Airports - write
 # --------------------------------------------------------------------------
 @router.post("/fleet/airports", response_model=AirportRow, status_code=201)
-def create_airport(body: AirportCreate, db: Session = Depends(get_db)):
+def create_airport(body: AirportCreate, db: Session = Depends(get_db),
+                   _admin: str = Depends(require_admin)):
     """Create a new airport, or revive one previously soft-deleted."""
     code = body.iata_code.strip().upper()
     if not code:
@@ -412,7 +417,8 @@ def create_airport(body: AirportCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/fleet/airports/{code}", response_model=AirportRow)
-def update_airport(code: str, body: AirportUpdate, db: Session = Depends(get_db)):
+def update_airport(code: str, body: AirportUpdate, db: Session = Depends(get_db),
+                   _admin: str = Depends(require_admin)):
     """Update mutable fields of an existing airport."""
     ap = (
         db.query(Airport)
@@ -437,7 +443,8 @@ def update_airport(code: str, body: AirportUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/fleet/airports/{code}")
-def delete_airport(code: str, db: Session = Depends(get_db)):
+def delete_airport(code: str, db: Session = Depends(get_db),
+                   _admin: str = Depends(require_admin)):
     """Soft-delete an airport, blocked if still referenced by data."""
     ap = (
         db.query(Airport)

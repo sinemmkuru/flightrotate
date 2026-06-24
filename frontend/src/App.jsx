@@ -7,6 +7,8 @@
 
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
+import useAuthStore, { selectIsAuthenticated } from "./store/useAuthStore";
+import Login from "./pages/Login";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Configure from "./pages/Configure";
@@ -21,6 +23,13 @@ import Airports from "./pages/Airports";
 import "./App.css";
 
 function App() {
+  const isAuthenticated = useAuthStore(selectIsAuthenticated);
+
+  // No session -> the only thing the app renders is the login screen.
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
   return (
     <BrowserRouter>
       <Layout>

@@ -29,6 +29,7 @@ import {
   getBaseline,
 } from "../api/client";
 import useAppStore from "../store/useAppStore";
+import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 import { co2Kg } from "../utils/emissions";
 import KpiCard from "../components/KpiCard";
 import GanttChart from "../components/GanttChart";
@@ -46,6 +47,7 @@ function nowLocalInput() {
 function Dashboard() {
   const { currentRunId, setCurrentRunId, isOptimizing, setIsOptimizing } =
     useAppStore();
+  const isAdmin = useAuthStore(selectIsAdmin);
 
   const [run, setRun] = useState(null);
   const [assignments, setAssignments] = useState([]);
@@ -214,13 +216,15 @@ function Dashboard() {
             onChange={(e) => setAsOf(e.target.value)}
           />
         </label>
-        <button
-          onClick={handleRunOptimization}
-          disabled={isOptimizing}
-          className="btn btn-primary"
-        >
-          {isOptimizing ? "Running..." : "Run optimization"}
-        </button>
+        {isAdmin && (
+          <button
+            onClick={handleRunOptimization}
+            disabled={isOptimizing}
+            className="btn btn-primary"
+          >
+            {isOptimizing ? "Running..." : "Run optimization"}
+          </button>
+        )}
         {run && (
           <span style={{ display: "inline-flex", gap: 8, marginLeft: 8 }}>
             <a

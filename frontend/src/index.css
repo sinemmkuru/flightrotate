@@ -58,3 +58,10 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-color);
 }
+
+/* Inline hint shown to viewer-role users next to disabled write controls. */
+.viewer-note {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--accent-orange);
+}

@@ -8,6 +8,7 @@
 
 import { NavLink } from "react-router-dom";
 import PlanSwitcher from "./PlanSwitcher";
+import useAuthStore from "../store/useAuthStore";
 import "./Layout.css";
 
 const NAV_ITEMS = [
@@ -23,6 +24,9 @@ const NAV_ITEMS = [
 ];
 
 function Layout({ children }) {
+  const role = useAuthStore((s) => s.role);
+  const logout = useAuthStore((s) => s.logout);
+
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -49,6 +53,14 @@ function Layout({ children }) {
         </nav>
 
         <div className="sidebar-footer">
+          <div className="sidebar-user">
+            <span className={`role-badge role-${role}`}>
+              {role === "admin" ? "👑 admin" : "👁 viewer"}
+            </span>
+            <button className="logout-button" onClick={logout}>
+              Çıkış
+            </button>
+          </div>
           <p>v0.1.0</p>
         </div>
       </aside>

@@ -13,6 +13,7 @@ from typing import Optional
 from persistence.database import get_db
 from persistence.models import OptimizationRun, Assignment, Flight, Aircraft, AuditLog, Plan
 from api.routes.plans import get_active_plan_id
+from api.auth import require_admin
 from api.schemas.optimization import (
     KPI, ObjectiveWeights, RunSummary, AssignmentRow,
 )
@@ -145,7 +146,8 @@ def get_published_plan(db: Session = Depends(get_db)):
 
 
 @router.post("/runs/{run_id}/publish", response_model=RunSummary)
-def publish_run(run_id: str, db: Session = Depends(get_db)):
+def publish_run(run_id: str, db: Session = Depends(get_db),
+                _admin: str = Depends(require_admin)):
     """
     Mark a run as the published plan of record. Any previously published run is
     demoted to draft, so at most one plan is published at a time. Audited.
@@ -182,7 +184,8 @@ def publish_run(run_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/runs/{run_id}/unpublish", response_model=RunSummary)
-def unpublish_run(run_id: str, db: Session = Depends(get_db)):
+def unpublish_run(run_id: str, db: Session = Depends(get_db),
+                  _admin: str = Depends(require_admin)):
     """Demote a published run back to draft (leaving no plan of record)."""
     run = (
         db.query(OptimizationRun)
@@ -468,7 +471,8 @@ class DisruptRequest(BaseModel):
 
 
 @router.post("/disrupt")
-def disrupt(req: DisruptRequest, db: Session = Depends(get_db)):
+def disrupt(req: DisruptRequest, db: Session = Depends(get_db),
+            _admin: str = Depends(require_admin)):
     """
     Apply a disruption (aircraft AOG, flight cancellation, or flight delay),
     re-optimize with CP-SAT, and return a before/after impact report. Reads the

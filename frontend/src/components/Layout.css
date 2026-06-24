@@ -80,6 +80,45 @@
   color: var(--text-secondary);
 }
 
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.role-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 10px;
+}
+
+.role-badge.role-admin {
+  color: var(--accent-blue);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.role-badge.role-viewer {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.logout-button {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
 /* --- Main content --- */
 .main-content {
   flex: 1;
