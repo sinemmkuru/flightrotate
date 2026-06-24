@@ -66,6 +66,20 @@ export async function getRun(runId) {
   return res.data;
 }
 
+// --- Plan of record (publish / unpublish) ---
+export async function getPublishedPlan() {
+  const res = await client.get("/published-plan");
+  return res.data; // RunSummary or null
+}
+export async function publishRun(runId) {
+  const res = await client.post(`/runs/${runId}/publish`);
+  return res.data;
+}
+export async function unpublishRun(runId) {
+  const res = await client.post(`/runs/${runId}/unpublish`);
+  return res.data;
+}
+
 export async function getAssignments(runId) {
   const res = await client.get(`/runs/${runId}/assignments`);
   return res.data;
@@ -82,11 +96,11 @@ export default client;
 // Upload a flight schedule CSV (multipart)
 // Upload a flight schedule CSV (multipart). Uses fetch to avoid the axios
 // instance's default application/json Content-Type clobbering the multipart boundary.
-export async function uploadFlights(file) {
+export async function uploadFlights(file, force = false) {
   const form = new FormData();
   form.append("file", file);
   const base = client.defaults.baseURL || "";
-  const res = await fetch(`${base}/upload/flights`, {
+  const res = await fetch(`${base}/upload/flights${force ? "?force=true" : ""}`, {
     method: "POST",
     body: form,
   });
@@ -99,11 +113,11 @@ export async function uploadFlights(file) {
   return data;
 }
 // Upload an aircraft fleet CSV (multipart). Same fetch approach as uploadFlights.
-export async function uploadAircraft(file) {
+export async function uploadAircraft(file, force = false) {
   const form = new FormData();
   form.append("file", file);
   const base = client.defaults.baseURL || "";
-  const res = await fetch(`${base}/upload/aircraft`, {
+  const res = await fetch(`${base}/upload/aircraft${force ? "?force=true" : ""}`, {
     method: "POST",
     body: form,
   });

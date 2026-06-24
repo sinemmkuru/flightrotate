@@ -154,3 +154,31 @@ shared CSS variables used across the app (with safe fallbacks).
   color: var(--text-secondary, #9a988f);
   margin: 0;
 }
+
+/* Plan-of-record column */
+.row-published {
+  background-color: rgba(63, 185, 80, 0.1);
+}
+.published-badge {
+  display: inline-block;
+  background-color: var(--accent-green, #3fb950);
+  color: #0b1b0e;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 8px;
+}
+.plan-btn {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.plan-btn:hover {
+  border-color: var(--accent-green, #3fb950);
+}

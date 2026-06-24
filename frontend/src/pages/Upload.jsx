@@ -317,7 +317,7 @@ function Upload() {
     }
   }
 
-  async function handleGenerate() {
+  async function handleGenerate(force = false) {
     setGenerating(true);
     setError(null);
     setLastGenerated(null);
@@ -326,10 +326,20 @@ function Upload() {
         size: selectedSize,
         seed: 42,
         clear_existing: true,
+        force,
       });
       setLastGenerated(result);
       setHasRuns(false); // new data, no runs yet
     } catch (err) {
+      // Wipe protection: a published plan exists. Confirm, then force.
+      if (err.response?.status === 409 && !force) {
+        const detail = err.response?.data?.detail || "A published plan exists.";
+        setGenerating(false);
+        if (window.confirm(`${detail}\n\nProceed and delete it?`)) {
+          return handleGenerate(true);
+        }
+        return;
+      }
       console.error(err);
       const detail = err.response?.data?.detail || err.message;
       setError(`Generation failed: ${detail}`);
@@ -338,7 +348,7 @@ function Upload() {
     }
   }
 
-  async function doUpload(kind, file) {
+  async function doUpload(kind, file, force = false) {
     if (!file) return;
     const setState = kind === "flights" ? setFlightUpload : setAircraftUpload;
     if (!file.name.toLowerCase().endsWith(".csv")) {
@@ -353,10 +363,19 @@ function Upload() {
     try {
       const res =
         kind === "flights"
-          ? await uploadFlights(file)
-          : await uploadAircraft(file);
+          ? await uploadFlights(file, force)
+          : await uploadAircraft(file, force);
       setState({ uploading: false, file, result: res });
     } catch (e) {
+      // Wipe protection: a published plan exists. Confirm, then force.
+      if (e?.response?.status === 409 && !force) {
+        const detail = e.response?.data?.detail || "A published plan exists.";
+        setState({ uploading: false, file, result: null });
+        if (window.confirm(`${detail}\n\nProceed and delete it?`)) {
+          return doUpload(kind, file, true);
+        }
+        return;
+      }
       let detail = "Upload failed.";
       const d = e?.response?.data?.detail;
       if (typeof d === "string") detail = d;
@@ -446,7 +465,7 @@ function Upload() {
         )}
 
         <button
-          onClick={handleGenerate}
+          onClick={() => handleGenerate()}
           disabled={generating}
           className="btn btn-primary btn-large"
         >

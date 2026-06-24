@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 
 import {
   listRuns,
+  getPublishedPlan,
   runOptimizationAsync,
   getOptimizeStatus,
   getAssignments,
@@ -68,17 +69,22 @@ function Dashboard() {
     setError(null);
     setSelectedFlight(null);
     try {
-      const runs = await listRuns();
-      if (runs.length === 0) {
+      // Prefer the published plan of record; fall back to the newest run.
+      const published = await getPublishedPlan().catch(() => null);
+      let chosen = published;
+      if (!chosen) {
+        const runs = await listRuns();
+        chosen = runs.length > 0 ? runs[0] : null; // newest-first
+      }
+      if (!chosen) {
         setRun(null);
         setAssignments([]);
         setBaseline(null);
         setCurrentRunId(null);
       } else {
-        const latest = runs[0]; // backend returns newest-first
-        setRun(latest);
-        setCurrentRunId(latest.run_id);
-        const rows = await getAssignments(latest.run_id);
+        setRun(chosen);
+        setCurrentRunId(chosen.run_id);
+        const rows = await getAssignments(chosen.run_id);
         setAssignments(rows);
         // Baseline is independent of the run; never let it break the dashboard.
         try {
@@ -163,7 +169,8 @@ function Dashboard() {
           <h2>Dashboard</h2>
           {run && (
             <p className="dashboard-subtitle">
-              Run {run.run_id.slice(0, 8)} • {run.algorithm.toUpperCase()} •{" "}
+              {run.status === "published" ? "📌 Published plan" : "Draft (latest run)"}{" "}
+              • Run {run.run_id.slice(0, 8)} • {run.algorithm.toUpperCase()} •{" "}
               {new Date(run.created_at).toLocaleString()}
             </p>
           )}
@@ -200,6 +207,10 @@ function Dashboard() {
           </span>
         )}
       </header>
+
+      {run?.stale && (
+        <div className="stale-banner">⚠️ {run.stale_detail}</div>
+      )}
 
       {isOptimizing && (
         <div className="optimize-progress">

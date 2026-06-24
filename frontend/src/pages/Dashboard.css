@@ -60,6 +60,16 @@
   font-family: inherit;
 }
 
+/* Staleness warning for an out-of-sync published plan. */
+.stale-banner {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background-color: rgba(240, 136, 62, 0.12);
+  border: 1px solid var(--accent-orange, #e08a3c);
+  color: var(--accent-orange, #e08a3c);
+  font-size: 13px;
+}
+
 /* Live progress of a background optimization run. */
 .optimize-progress {
   display: flex;

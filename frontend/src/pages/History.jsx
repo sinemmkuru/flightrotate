@@ -11,7 +11,7 @@ read-only view over it and reuses the export endpoints for per-row download.
 To compare two runs side by side, use the Compare page.
 */
 import { useEffect, useMemo, useState } from "react";
-import { listRuns } from "../api/client";
+import { listRuns, publishRun, unpublishRun } from "../api/client";
 import "./History.css";
 
 // Dev/demo API base; change if the backend is deployed elsewhere.
@@ -84,6 +84,16 @@ function History() {
     return arr;
   }, [runs, sort]);
 
+  async function setPlan(runId, publish) {
+    try {
+      if (publish) await publishRun(runId);
+      else await unpublishRun(runId);
+      await load(); // refresh statuses (single-publish may have demoted another)
+    } catch {
+      setError("Could not update the plan status.");
+    }
+  }
+
   function toggleSort(key) {
     setSort((s) =>
       s.key === key
@@ -107,6 +117,7 @@ function History() {
     { key: "cost", label: "Cost ($)", sortable: true, num: true },
     { key: "solve", label: "Solve (s)", sortable: true, num: true },
     { key: "run", label: "Run", sortable: false },
+    { key: "plan", label: "Plan", sortable: false },
     { key: "export", label: "Export", sortable: false },
   ];
 
@@ -155,8 +166,14 @@ function History() {
               {sortedRuns.map((run) => {
                 const k = run.kpi || {};
                 const isNewest = run.run_id === newestId;
+                const isPublished = run.status === "published";
                 return (
-                  <tr key={run.run_id} className={isNewest ? "row-newest" : ""}>
+                  <tr
+                    key={run.run_id}
+                    className={
+                      isPublished ? "row-published" : isNewest ? "row-newest" : ""
+                    }
+                  >
                     <td>{new Date(run.created_at).toLocaleString()}</td>
                     <td>
                       <span className="algo-pill">
@@ -184,6 +201,17 @@ function History() {
                     <td className="run-cell">
                       <code>{run.run_id.slice(0, 8)}</code>
                       {isNewest && <span className="latest-badge">latest</span>}
+                    </td>
+                    <td className="plan-cell">
+                      {isPublished && (
+                        <span className="published-badge">PUBLISHED</span>
+                      )}
+                      <button
+                        className="plan-btn"
+                        onClick={() => setPlan(run.run_id, !isPublished)}
+                      >
+                        {isPublished ? "Unpublish" : "Publish"}
+                      </button>
                     </td>
                     <td className="export-cell">
                       <a
