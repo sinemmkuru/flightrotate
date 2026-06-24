@@ -27,6 +27,18 @@ export async function runOptimization(body) {
   return res.data;
 }
 
+// Start an optimization in the background; returns { job_id, status } at once.
+export async function runOptimizationAsync(body) {
+  const res = await client.post("/optimize/async", body);
+  return res.data;
+}
+
+// Poll a background optimization job: { status, progress, run_id, message, error }.
+export async function getOptimizeStatus(jobId) {
+  const res = await client.get(`/optimize/status/${jobId}`);
+  return res.data;
+}
+
 export async function generateSample(body = { size: "medium" }) {
   const res = await client.post("/sample", body);
   return res.data;

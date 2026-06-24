@@ -22,7 +22,8 @@ import { useEffect, useState } from "react";
 
 import {
   listRuns,
-  runOptimization,
+  runOptimizationAsync,
+  getOptimizeStatus,
   getAssignments,
   getBaseline,
 } from "../api/client";
@@ -54,6 +55,8 @@ function Dashboard() {
   // Planning "as-of" time: flights before it are locked to the prior plan
   // (history); only later flights are optimized. Defaults to now.
   const [asOf, setAsOf] = useState(nowLocalInput);
+  // Live progress of a background optimization job (null when idle).
+  const [progress, setProgress] = useState(null);
 
   // On mount: load runs, pick the newest, fetch its assignments + baseline
   useEffect(() => {
@@ -97,20 +100,37 @@ function Dashboard() {
   async function handleRunOptimization() {
     setIsOptimizing(true);
     setError(null);
+    setProgress(null);
     try {
-      await runOptimization({
+      // Start the run in the background and poll for live progress, so large
+      // (slow) runs neither block nor hit the request timeout.
+      const { job_id } = await runOptimizationAsync({
         algorithm: "genetic",
         weights: { coverage: 0.5, idle: 0.25, fuel: 0.25 },
         seed: 42,
         reference_time: asOf,
       });
-      // Reload to pull in the new run
-      await loadLatestRun();
+
+      while (true) {
+        const status = await getOptimizeStatus(job_id);
+        if (status.status === "running") {
+          setProgress(status.progress);
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
+        }
+        if (status.status === "failed") {
+          setError(`Optimization failed: ${status.error}`);
+        } else {
+          await loadLatestRun(); // completed -> pull in the new run
+        }
+        break;
+      }
     } catch (err) {
       console.error(err);
       const detail = err.response?.data?.detail || err.message;
       setError(`Optimization failed: ${detail}`);
     } finally {
+      setProgress(null);
       setIsOptimizing(false);
     }
   }
@@ -180,6 +200,33 @@ function Dashboard() {
           </span>
         )}
       </header>
+
+      {isOptimizing && (
+        <div className="optimize-progress">
+          {progress && progress.total_generations ? (
+            <>
+              <div className="op-bar">
+                <div
+                  className="op-bar-fill"
+                  style={{
+                    width: `${Math.round(
+                      (100 * progress.generation) / progress.total_generations,
+                    )}%`,
+                  }}
+                />
+              </div>
+              <span className="op-label">
+                Generation {progress.generation}/{progress.total_generations}
+                {progress.best_fitness != null
+                  ? ` · best fitness ${progress.best_fitness}`
+                  : ""}
+              </span>
+            </>
+          ) : (
+            <span className="op-label">Solving…</span>
+          )}
+        </div>
+      )}
 
       {!run ? (
         <div className="dashboard-empty">

@@ -17,7 +17,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 
-import { runOptimization, getStatus } from "../api/client";
+import { runOptimizationAsync, getOptimizeStatus, getStatus } from "../api/client";
 import useAppStore from "../store/useAppStore";
 
 import "./Configure.css";
@@ -42,6 +42,8 @@ function Configure() {
     mutation_rate: 0.15,
   });
   const [error, setError] = useState(null);
+  // Live progress of the background optimization job (null when idle).
+  const [progress, setProgress] = useState(null);
 
   // Data availability gate (B). null = unknown (loading or backend down);
   // we only block when we positively know something is missing.
@@ -92,19 +94,37 @@ function Configure() {
   async function handleRun() {
     setError(null);
     setIsOptimizing(true);
+    setProgress(null);
     try {
-      await runOptimization({
+      // Run in the background and poll for live progress; large GA runs (high
+      // generations/population) would otherwise block past the request timeout.
+      const { job_id } = await runOptimizationAsync({
         algorithm: "genetic",
         weights,
         parameters: params,
         seed: Math.floor(Math.random() * 1000000),
       });
-      navigate("/dashboard");
+
+      while (true) {
+        const status = await getOptimizeStatus(job_id);
+        if (status.status === "running") {
+          setProgress(status.progress);
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
+        }
+        if (status.status === "failed") {
+          setError(`Optimization failed: ${status.error}`);
+        } else {
+          navigate("/dashboard"); // completed
+        }
+        break;
+      }
     } catch (err) {
       console.error(err);
       const detail = err.response?.data?.detail || err.message;
       setError(`Optimization failed: ${detail}`);
     } finally {
+      setProgress(null);
       setIsOptimizing(false);
     }
   }
@@ -248,8 +268,34 @@ function Configure() {
         >
           {isOptimizing ? "Running optimization..." : "Run optimization"}
         </button>
+        {isOptimizing && (
+          <div className="optimize-progress">
+            {progress && progress.total_generations ? (
+              <>
+                <div className="op-bar">
+                  <div
+                    className="op-bar-fill"
+                    style={{
+                      width: `${Math.round(
+                        (100 * progress.generation) / progress.total_generations,
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <span className="op-label">
+                  Generation {progress.generation}/{progress.total_generations}
+                  {progress.best_fitness != null
+                    ? ` · best fitness ${progress.best_fitness}`
+                    : ""}
+                </span>
+              </>
+            ) : (
+              <span className="op-label">Solving…</span>
+            )}
+          </div>
+        )}
         <p className="hint center">
-          Takes ~5-25 seconds depending on parameters and dataset size.
+          Runs in the background with live progress; large runs may take a while.
         </p>
       </div>
     </div>

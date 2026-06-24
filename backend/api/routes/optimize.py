@@ -20,6 +20,7 @@ finish. Async/background execution will be added later when long runs make
 it necessary (see Future Work in the thesis).
 """
 
+import threading
 import uuid
 from datetime import datetime, timezone, timedelta
 from types import SimpleNamespace
@@ -27,7 +28,7 @@ from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from persistence.database import get_db
+from persistence.database import get_db, SessionLocal
 from persistence.models import (
     Flight, Aircraft, OptimizationRun, Assignment,
 )
@@ -50,6 +51,13 @@ AUTO_CP_SAT_MAX_FLIGHTS = 400
 
 @router.post("/optimize", response_model=OptimizeResponse)
 def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
+    """Run an optimization synchronously and return when it finishes."""
+    return _execute_optimization(request, db)
+
+
+def _execute_optimization(
+    request: OptimizeRequest, db: Session, progress_callback=None
+) -> OptimizeResponse:
     # Guard: don't run on an empty dataset (e.g. only a broken upload was attempted).
     from persistence.models import Flight, Aircraft
     flight_count = db.query(Flight).filter(Flight.deleted_at.is_(None)).count()
@@ -246,6 +254,7 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
             params=params_dict,
             seed=request.seed,
             aircraft_starts=aircraft_starts,
+            progress_callback=progress_callback,
         )
 
     # --- 7. Combine locked past + optimized future into one plan ---
@@ -356,3 +365,123 @@ def optimize(request: OptimizeRequest, db: Session = Depends(get_db)):
             f"Fitness: {result.best_fitness.fitness:.4f} [{solver_label}]"
         )
     return OptimizeResponse(run_id=run_id, status="completed", message=message)
+
+
+# ---------------------------------------------------------------------------
+# Asynchronous optimization with live progress
+# ---------------------------------------------------------------------------
+# Large instances (e.g. 500+ flights via the genetic algorithm) can take longer
+# than a client request should block for. POST /optimize/async starts the same
+# optimization in a background thread and returns a job id immediately; the
+# client polls GET /optimize/status/{job_id} for live progress (the GA reports
+# its best fitness each generation) and the final run_id.
+#
+# Jobs live in an in-process registry. This is per-worker and not persisted,
+# which is fine for the single-worker dev/prototype server; a multi-worker
+# deployment would back this with a shared store (Redis, the DB, etc.).
+_JOBS: dict = {}
+_JOBS_LOCK = threading.Lock()
+
+
+def _set_job(job_id: str, **fields) -> None:
+    with _JOBS_LOCK:
+        _JOBS.setdefault(job_id, {}).update(fields)
+
+
+@router.post("/optimize/async")
+def optimize_async(request: OptimizeRequest, db: Session = Depends(get_db)):
+    """
+    Start an optimization in the background; return a job id at once.
+
+    Poll GET /optimize/status/{job_id}: while running it carries the GA's
+    generation/best-fitness progress; when done it carries the run_id (and the
+    same message the synchronous endpoint returns), or an error.
+    """
+    # Fast, synchronous validation so obviously-bad requests fail immediately
+    # instead of as a background error.
+    flight_count = db.query(Flight).filter(Flight.deleted_at.is_(None)).count()
+    aircraft_count = db.query(Aircraft).filter(Aircraft.deleted_at.is_(None)).count()
+    if flight_count == 0 or aircraft_count == 0:
+        missing = []
+        if flight_count == 0:
+            missing.append("flights")
+        if aircraft_count == 0:
+            missing.append("aircraft")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot optimize: no {' or '.join(missing)} loaded. "
+                "Upload a valid CSV or generate sample data first."
+            ),
+        )
+    w = request.weights
+    if not 0.95 <= (w.coverage + w.idle + w.fuel) <= 1.05:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Weights must sum to ~1.0 (got {w.coverage + w.idle + w.fuel:.3f})",
+        )
+
+    total_generations = (
+        request.parameters.generations
+        if request.parameters is not None
+        else DEFAULT_GA_PARAMS["generations"]
+    )
+    job_id = str(uuid.uuid4())
+    _set_job(
+        job_id,
+        status="running",
+        algorithm=request.algorithm,
+        progress={
+            "phase": "starting",
+            "generation": 0,
+            "total_generations": total_generations,
+            "best_fitness": None,
+        },
+        run_id=None,
+        message=None,
+        error=None,
+    )
+
+    def worker():
+        # The background thread outlives the request, so it owns its own DB
+        # session (check_same_thread=False makes cross-thread access safe).
+        worker_db = SessionLocal()
+        try:
+            def cb(generation, best_fitness):
+                _set_job(job_id, progress={
+                    "phase": "running",
+                    "generation": generation + 1,
+                    "total_generations": total_generations,
+                    "best_fitness": round(float(best_fitness), 4),
+                })
+
+            resp = _execute_optimization(request, worker_db, progress_callback=cb)
+            _set_job(
+                job_id, status="completed", run_id=resp.run_id,
+                message=resp.message,
+                progress={
+                    "phase": "completed",
+                    "generation": total_generations,
+                    "total_generations": total_generations,
+                    "best_fitness": None,
+                },
+            )
+        except HTTPException as e:
+            _set_job(job_id, status="failed", error=str(e.detail))
+        except Exception as e:  # noqa: BLE001 - surface any solver error to the client
+            _set_job(job_id, status="failed", error=str(e))
+        finally:
+            worker_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": job_id, "status": "running"}
+
+
+@router.get("/optimize/status/{job_id}")
+def optimize_status(job_id: str):
+    """Return the current state of a background optimization job."""
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"Unknown job id: {job_id}")
+        return {"job_id": job_id, **job}
