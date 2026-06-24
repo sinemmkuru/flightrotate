@@ -87,6 +87,7 @@ function UploadCard({ title, columns, kind, state, onFile }) {
   const { uploading, result, file } = state;
   const done = result?.ok;
   const failed = result && !result.ok;
+  const merged = result?.mode === "merge";
   const count =
     kind === "flights" ? result?.flights_imported : result?.aircraft_imported;
   const unit = kind === "flights" ? "flights" : "aircraft";
@@ -128,7 +129,9 @@ function UploadCard({ title, columns, kind, state, onFile }) {
           <>
             <div className="csv-text">{file?.name}</div>
             <div className="csv-subtext">
-              {count} {unit} imported
+              {merged
+                ? `merged: +${result.added} new · ${result.updated} updated · ${result.removed} removed · ${result.unchanged} unchanged`
+                : `${count} ${unit} imported`}
               {file ? ` · ${(file.size / 1024).toFixed(1)} KB` : ""} · click to
               replace
             </div>
@@ -289,6 +292,9 @@ function Upload() {
   const [generating, setGenerating] = useState(false);
   const [lastGenerated, setLastGenerated] = useState(null);
   const [error, setError] = useState(null);
+  // Flight-schedule upload mode: "replace" wipes the active plan; "merge"
+  // upserts (add/update/remove-in-range) and keeps runs.
+  const [flightMode, setFlightMode] = useState("replace");
 
   const [flightUpload, setFlightUpload] = useState({
     uploading: false,
@@ -363,7 +369,7 @@ function Upload() {
     try {
       const res =
         kind === "flights"
-          ? await uploadFlights(file, force)
+          ? await uploadFlights(file, force, flightMode)
           : await uploadAircraft(file, force);
       setState({ uploading: false, file, result: res });
     } catch (e) {
@@ -480,9 +486,30 @@ function Upload() {
       <div className="upload-intro">
         <h3>Upload CSV</h3>
         <p className="hint">
-          Upload your own data. Airports are fixed (Turkish domestic). Flights
-          and fleet are each replaced independently when you upload them.
+          Upload your own data. Airports are fixed (Turkish domestic). The fleet
+          is global; flights load into the active plan.
         </p>
+        <div className="flight-mode">
+          <span className="flight-mode-label">Flight schedule:</span>
+          <label>
+            <input
+              type="radio"
+              name="flightmode"
+              checked={flightMode === "replace"}
+              onChange={() => setFlightMode("replace")}
+            />{" "}
+            Replace plan
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="flightmode"
+              checked={flightMode === "merge"}
+              onChange={() => setFlightMode("merge")}
+            />{" "}
+            Merge (add/update, keep runs)
+          </label>
+        </div>
       </div>
       <div className="upload-cards">
         <UploadCard

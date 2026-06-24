@@ -1,5 +1,25 @@
 /* Data Upload page */
 
+.flight-mode {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.flight-mode-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.flight-mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
 .upload {
   display: flex;
   flex-direction: column;

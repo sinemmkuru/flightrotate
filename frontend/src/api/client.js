@@ -118,11 +118,15 @@ export default client;
 // Upload a flight schedule CSV (multipart)
 // Upload a flight schedule CSV (multipart). Uses fetch to avoid the axios
 // instance's default application/json Content-Type clobbering the multipart boundary.
-export async function uploadFlights(file, force = false) {
+export async function uploadFlights(file, force = false, mode = "replace") {
   const form = new FormData();
   form.append("file", file);
   const base = client.defaults.baseURL || "";
-  const res = await fetch(`${base}/upload/flights${force ? "?force=true" : ""}`, {
+  const params = new URLSearchParams();
+  if (force) params.set("force", "true");
+  if (mode && mode !== "replace") params.set("mode", mode);
+  const qs = params.toString();
+  const res = await fetch(`${base}/upload/flights${qs ? `?${qs}` : ""}`, {
     method: "POST",
     body: form,
   });
