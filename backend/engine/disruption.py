@@ -50,11 +50,16 @@ def _solve(flights, aircraft_list, weights, airport_turnarounds=None):
     graph = build_flight_connection_graph(
         flights, airport_turnarounds=airport_turnarounds
     )
+    # Each aircraft starts at its base: an airport can only originate as many
+    # rotations as it has aircraft standing there (a hard fleet-positioning
+    # constraint, matching the main optimizer so before/after stay comparable).
+    aircraft_starts = {a.tail_number: a.base_airport for a in aircraft_list}
     result = run_cp_sat(
         flights=flights,
         aircraft_list=aircraft_list,
         graph=graph,
         weights=weights,
+        aircraft_starts=aircraft_starts,
     )
     return result.best_solution, result.best_fitness
 

@@ -452,7 +452,14 @@ def get_baseline(db: Session = Depends(get_db)):
         for ap in db.query(Airport).filter(Airport.deleted_at.is_(None)).all()
         if ap.min_turnaround_min is not None
     }
-    kpis = compute_baseline_kpis(flights, aircraft_list, airport_turnarounds)
+    # Hold the baseline to the same hard constraint as the optimizer: each
+    # aircraft starts at its base, so an airport can only originate as many
+    # rotations as it has aircraft based there. Otherwise the "% vs naive"
+    # comparison would be unfair (the naive plan could teleport aircraft).
+    aircraft_starts = {a.tail_number: a.base_airport for a in aircraft_list}
+    kpis = compute_baseline_kpis(
+        flights, aircraft_list, airport_turnarounds, aircraft_starts
+    )
     kpis["available"] = True
     return kpis
 

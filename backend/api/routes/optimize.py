@@ -184,12 +184,16 @@ def _execute_optimization(
     )
 
     # --- 4b. Carry each aircraft's position/availability across the boundary ---
-    # An aircraft that flew locked past legs now stands at that last leg's
-    # destination and is free only after it lands (+ turnaround). The future
-    # optimisation starts it from there: its first future leg must depart that
-    # airport (aircraft_starts) at/after that time (effective available_from).
-    # Aircraft with no locked past keep their base (a soft preference, so they
-    # are left out of aircraft_starts) and their normal availability.
+    # Every aircraft starts the planning horizon at a FIXED, known location, so
+    # its first leg must depart from there (aircraft_starts) and an airport can
+    # only originate as many rotations as it has aircraft standing there. This is
+    # a hard constraint: an aircraft cannot teleport to begin a rotation, and a
+    # 1-aircraft airport cannot launch 5 simultaneous rotations.
+    #   - An aircraft that flew locked past legs stands at that last leg's
+    #     destination and is free only after it lands (+ turnaround); its first
+    #     future leg departs there at/after that time (effective available_from).
+    #   - An aircraft with no locked past (e.g. every aircraft on a greenfield
+    #     first run) starts at its base with its normal availability.
     DEFAULT_TURN = 45
     past_by_tail: dict[str, list[str]] = {}
     for fid, tail in locked_past.items():
@@ -210,8 +214,9 @@ def _execute_optimization(
             eff_available_from = last.scheduled_arrival + timedelta(minutes=turn)
             aircraft_starts[ac.tail_number] = start_airport  # position is fixed
         else:
-            start_airport = ac.base_airport          # soft; not pinned
+            start_airport = ac.base_airport          # starts the day at its base
             eff_available_from = ac.available_from
+            aircraft_starts[ac.tail_number] = start_airport  # position is fixed
         effective_aircraft.append(SimpleNamespace(
             tail_number=ac.tail_number,
             aircraft_type=ac.aircraft_type,
