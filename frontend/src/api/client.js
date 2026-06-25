@@ -158,6 +158,13 @@ export async function getCapacitySuggestion() {
   return res.data;
 }
 
+// Lever B: recover uncovered flights by repositioning idle aircraft on empty
+// ferry legs (at fuel cost), instead of adding fleet. Read-only what-if.
+export async function getFerrySuggestion() {
+  const res = await client.get("/ferry-suggestion");
+  return res.data;
+}
+
 // Map view: all airports
 export async function getAirports() {
   const res = await client.get("/airports");

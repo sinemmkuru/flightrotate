@@ -240,6 +240,43 @@ def capacity_suggestion(db: Session = Depends(get_db)):
     return suggest_capacity(flights, aircraft_list, airport_turnarounds)
 
 
+@router.get("/ferry-suggestion")
+def ferry_suggestion(db: Session = Depends(get_db)):
+    """
+    Lever B: recover uncovered flights by repositioning idle aircraft on empty
+    ferry legs (at fuel cost) instead of adding fleet. Read-only what-if — it
+    re-solves with CP-SAT and plans ferries, but never changes anything.
+    """
+    from persistence.models import Flight, Aircraft, Airport
+    from engine.ferry import plan_ferries
+
+    plan_id = get_active_plan_id(db)
+    flights = (
+        db.query(Flight)
+        .filter(
+            Flight.status == "scheduled", Flight.deleted_at == None,  # noqa: E711
+            Flight.plan_id == plan_id,
+        )
+        .all()
+    )
+    aircraft_list = (
+        db.query(Aircraft)
+        .filter(Aircraft.status == "active", Aircraft.deleted_at == None)  # noqa: E711
+        .all()
+    )
+    if not flights or not aircraft_list:
+        return {"available": False, "reason": "no flights or aircraft loaded"}
+
+    airports = db.query(Airport).filter(Airport.deleted_at.is_(None)).all()
+    coords = {a.iata_code: (a.latitude, a.longitude) for a in airports}
+    airport_turnarounds = {
+        a.iata_code: a.min_turnaround_min
+        for a in airports
+        if a.min_turnaround_min is not None
+    }
+    return plan_ferries(flights, aircraft_list, coords, airport_turnarounds)
+
+
 @router.get("/runs/{run_id}/unassigned")
 def get_unassigned(run_id: str, db: Session = Depends(get_db)):
     """

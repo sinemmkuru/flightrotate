@@ -28,6 +28,7 @@ import {
   getAssignments,
   getUnassigned,
   getCapacitySuggestion,
+  getFerrySuggestion,
   getBaseline,
 } from "../api/client";
 import useAppStore from "../store/useAppStore";
@@ -56,6 +57,8 @@ function Dashboard() {
   const [unassigned, setUnassigned] = useState(null);
   const [capacity, setCapacity] = useState(null);
   const [capacityLoading, setCapacityLoading] = useState(false);
+  const [ferry, setFerry] = useState(null);
+  const [ferryLoading, setFerryLoading] = useState(false);
   const [baseline, setBaseline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -92,6 +95,7 @@ function Dashboard() {
     setError(null);
     setSelectedFlight(null);
     setCapacity(null);
+    setFerry(null);
     try {
       // Prefer the published plan of record; fall back to the newest run.
       const published = await getPublishedPlan().catch(() => null);
@@ -185,6 +189,18 @@ function Dashboard() {
       setCapacity({ available: false, reason: "analysis failed" });
     } finally {
       setCapacityLoading(false);
+    }
+  }
+
+  async function handlePlanFerries() {
+    setFerryLoading(true);
+    try {
+      setFerry(await getFerrySuggestion());
+    } catch (err) {
+      console.error("ferry suggestion failed", err);
+      setFerry({ available: false, reason: "analysis failed" });
+    } finally {
+      setFerryLoading(false);
     }
   }
 
@@ -627,6 +643,88 @@ function Dashboard() {
                       </strong>{" "}
                       (@ ${capacity.lease_cost_per_aircraft_usd.toLocaleString()}
                       /aircraft). Add them in Fleet management, then re-optimize.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 16,
+                  paddingTop: 12,
+                  borderTop: "1px solid var(--border, #2a2a2a)",
+                }}
+              >
+                <button
+                  className="btn"
+                  onClick={handlePlanFerries}
+                  disabled={ferryLoading}
+                >
+                  {ferryLoading
+                    ? "Analyzing…"
+                    : "Reposition idle aircraft (empty ferry) →"}
+                </button>
+
+                {ferry && ferry.available === false && (
+                  <p className="hint small">
+                    Ferry analysis unavailable ({ferry.reason}).
+                  </p>
+                )}
+                {ferry && ferry.available && ferry.recovered === 0 && (
+                  <p className="hint small">
+                    No uncovered flight can be reached by repositioning an idle
+                    aircraft in time.
+                  </p>
+                )}
+                {ferry && ferry.available && ferry.recovered > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <p style={{ margin: "0 0 8px" }}>
+                      Repositioning recovers <strong>{ferry.recovered}</strong>{" "}
+                      flight(s): coverage {(ferry.base_coverage * 100).toFixed(0)}%
+                      →{" "}
+                      <strong>{(ferry.ferry_coverage * 100).toFixed(0)}%</strong>{" "}
+                      using {ferry.ferry_legs} empty ferry leg(s).
+                    </p>
+                    <div className="table-wrapper">
+                      <table className="assignment-table">
+                        <thead>
+                          <tr>
+                            <th>Aircraft</th>
+                            <th>Ferry (empty)</th>
+                            <th>Distance</th>
+                            <th>Fuel</th>
+                            <th>Enables</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ferry.ferries.map((fr, i) => (
+                            <tr key={i}>
+                              <td>{fr.tail}</td>
+                              <td>
+                                {fr.from} → {fr.to}
+                              </td>
+                              <td>{fr.distance_km} km</td>
+                              <td>{Math.round(fr.fuel_kg)} kg</td>
+                              <td>
+                                {fr.enables_flight} (
+                                {fr.enables_route.replace("->", "→")})
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="hint small">
+                      Empty positioning legs (no revenue). Total overhead:{" "}
+                      {ferry.total_ferry_km.toLocaleString()} km ·{" "}
+                      {Math.round(ferry.total_ferry_fuel_kg).toLocaleString()} kg ·{" "}
+                      <strong>
+                        ${ferry.estimated_ferry_cost_usd.toLocaleString()}
+                      </strong>{" "}
+                      fuel.
+                      {ferry.unrecoverable > 0
+                        ? ` ${ferry.unrecoverable} flight(s) still unrecoverable.`
+                        : ""}
                     </p>
                   </div>
                 )}
