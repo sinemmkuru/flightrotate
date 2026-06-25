@@ -23,10 +23,14 @@ import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
 
 import "./Configure.css";
 
+// Coverage is a HARD priority — both solvers (GA + CP-SAT) maximize it first and
+// never trade it for efficiency, so it is not a tunable weight. The only lever is
+// the efficiency TIE-BREAK between equal-coverage plans: how to balance idle time
+// vs fuel. The two shares sum to 1.0; only their ratio affects the result.
 const PRESETS = {
-  balanced: { coverage: 0.5, idle: 0.25, fuel: 0.25 },
-  coverage: { coverage: 0.7, idle: 0.15, fuel: 0.15 },
-  efficient: { coverage: 0.3, idle: 0.35, fuel: 0.35 },
+  balanced: { idle: 0.5, fuel: 0.5 },
+  idle: { idle: 0.8, fuel: 0.2 },
+  fuel: { idle: 0.2, fuel: 0.8 },
 };
 
 function Configure() {
@@ -34,7 +38,7 @@ function Configure() {
   const { isOptimizing, setIsOptimizing } = useAppStore();
   const isAdmin = useAuthStore(selectIsAdmin);
 
-  const [weights, setWeights] = useState(PRESETS.balanced);
+  const [eff, setEff] = useState(PRESETS.balanced);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [params, setParams] = useState({
     population_size: 100,
@@ -64,33 +68,15 @@ function Configure() {
   }
   const noData = missing.length > 0;
 
-  function handleWeightChange(key, newValue) {
-    // Re-normalize so all three still sum to 1.0.
-    // Other two weights keep their relative ratio.
-    const otherKeys = ["coverage", "idle", "fuel"].filter((k) => k !== key);
-    const remaining = 1 - newValue;
-    const otherSum = otherKeys.reduce((acc, k) => acc + weights[k], 0);
-
-    let updated;
-    if (otherSum > 0) {
-      updated = {
-        [key]: newValue,
-        [otherKeys[0]]: (weights[otherKeys[0]] / otherSum) * remaining,
-        [otherKeys[1]]: (weights[otherKeys[1]] / otherSum) * remaining,
-      };
-    } else {
-      // Edge case: both other weights are 0; split the rest evenly
-      updated = {
-        [key]: newValue,
-        [otherKeys[0]]: remaining / 2,
-        [otherKeys[1]]: remaining / 2,
-      };
-    }
-    setWeights(updated);
+  // Idle and fuel shares mirror each other (they sum to 1.0): raising one lowers
+  // the other. Coverage is not here — it is always maximized.
+  function handleEffChange(key, newValue) {
+    const other = key === "idle" ? "fuel" : "idle";
+    setEff({ [key]: newValue, [other]: 1 - newValue });
   }
 
   function applyPreset(name) {
-    setWeights(PRESETS[name]);
+    setEff(PRESETS[name]);
   }
 
   async function handleRun() {
@@ -100,6 +86,14 @@ function Configure() {
     try {
       // Run in the background and poll for live progress; large GA runs (high
       // generations/population) would otherwise block past the request timeout.
+      // Coverage is maximized by the solver as a hard priority (not a weight), so
+      // we fix it and split the remainder by the idle/fuel balance — only the
+      // idle:fuel ratio drives the efficiency tie-break.
+      const weights = {
+        coverage: 0.5,
+        idle: 0.5 * eff.idle,
+        fuel: 0.5 * eff.fuel,
+      };
       const { job_id } = await runOptimizationAsync({
         algorithm: "genetic",
         weights,
@@ -144,7 +138,8 @@ function Configure() {
       <section className="card">
         <h3>Presets</h3>
         <p className="hint">
-          Quick starting points. You can fine-tune the sliders afterwards.
+          Coverage is always maximized first; these only tune how the remaining
+          idle vs fuel tie-break is balanced.
         </p>
         <div className="preset-buttons">
           <button
@@ -152,51 +147,67 @@ function Configure() {
             onClick={() => applyPreset("balanced")}
           >
             Balanced
-            <small>50 / 25 / 25</small>
+            <small>idle 50 / fuel 50</small>
           </button>
           <button
             className="preset-btn"
-            onClick={() => applyPreset("coverage")}
+            onClick={() => applyPreset("idle")}
           >
-            Max coverage
-            <small>70 / 15 / 15</small>
+            Minimize idle
+            <small>idle 80 / fuel 20</small>
           </button>
           <button
             className="preset-btn"
-            onClick={() => applyPreset("efficient")}
+            onClick={() => applyPreset("fuel")}
           >
-            Most efficient
-            <small>30 / 35 / 35</small>
+            Minimize fuel
+            <small>idle 20 / fuel 80</small>
           </button>
         </div>
       </section>
 
-      {/* --- Objective weights --- */}
+      {/* --- Objective --- */}
       <section className="card">
-        <h3>Objective Weights</h3>
+        <h3>Objective</h3>
         <p className="hint">
-          Weights always sum to 1.0; changing one rescales the others.
+          Coverage is a hard priority: both solvers assign as many flights as
+          possible first and never drop a flight to save fuel. The sliders below
+          only break ties between equal-coverage plans.
         </p>
 
-        <WeightSlider
-          label="Coverage"
-          description="Maximize the number of flights assigned"
-          value={weights.coverage}
-          onChange={(v) => handleWeightChange("coverage", v)}
-          accent="blue"
-        />
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "10px 0",
+            marginBottom: 10,
+            borderBottom: "1px solid var(--border, #2a2a2a)",
+          }}
+        >
+          <div>
+            <div className="slider-label">Coverage</div>
+            <div className="slider-desc">
+              Maximize flights assigned — always on
+            </div>
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#378ADD" }}>
+            🔒 Maximized
+          </span>
+        </div>
+
         <WeightSlider
           label="Idle time"
-          description="Minimize aircraft waiting between flights"
-          value={weights.idle}
-          onChange={(v) => handleWeightChange("idle", v)}
+          description="Among equal-coverage plans, prefer less aircraft waiting"
+          value={eff.idle}
+          onChange={(v) => handleEffChange("idle", v)}
           accent="orange"
         />
         <WeightSlider
           label="Fuel"
-          description="Minimize total fuel consumption"
-          value={weights.fuel}
-          onChange={(v) => handleWeightChange("fuel", v)}
+          description="Among equal-coverage plans, prefer lower APU/idle fuel"
+          value={eff.fuel}
+          onChange={(v) => handleEffChange("fuel", v)}
           accent="green"
         />
       </section>

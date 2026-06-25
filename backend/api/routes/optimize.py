@@ -398,8 +398,9 @@ def _execute_optimization(
     else:
         message = (
             f"Optimization complete in {result.elapsed_seconds:.1f}s. "
-            f"Coverage: {result.best_fitness.coverage:.1%}, "
-            f"Fitness: {result.best_fitness.fitness:.4f} [{solver_label}]"
+            f"Coverage: {result.best_fitness.coverage:.1%} "
+            f"({result.best_fitness.assigned_count}/{result.best_fitness.total_flights} flights) "
+            f"[{solver_label}]"
         )
     return OptimizeResponse(run_id=run_id, status="completed", message=message)
 

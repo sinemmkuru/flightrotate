@@ -128,9 +128,12 @@ def run_cp_sat(
     # --- Objective: coverage primary, weighted idle + fuel secondary ---
     # Coverage is the primary (lexicographic) goal: COVERAGE_REWARD is far larger
     # than any achievable secondary cost, so the solver always covers as many
-    # flights as it can first. This matches the business priority and the genetic
-    # algorithm's strong coverage lean, and rules out the degenerate "cover few
-    # flights to minimise totals" solution.
+    # flights as it can first. The genetic algorithm uses the SAME lexicographic
+    # order (engine.solution: covered-flight count dominates the efficiency
+    # tie-break), so GA and CP-SAT optimise the same preference and a GA-vs-CP-SAT
+    # comparison reflects only the search method, not a different objective. This
+    # matches the business priority (a published schedule must be flown) and rules
+    # out the degenerate "cover few flights to minimise totals" solution.
     #
     # The secondary objective now honours the user's idle AND fuel weights (fuel
     # was previously ignored), normalised per flight against the same references

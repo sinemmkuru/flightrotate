@@ -10,17 +10,25 @@ A solution is "feasible" if no aircraft is double-booked and every
 consecutive pair of flights for the same aircraft is connectable
 (i.e. there is an edge in the Flight Connection Graph between them).
 
-Fitness design:
-    The objective is a weighted sum of three terms:
-        + coverage  (fraction of flights assigned, 0..1)
-        - idle      (average idle minutes per assigned flight, normalized)
-        - fuel      (average fuel kg per assigned flight, normalized)
+Fitness design (lexicographic — aligned with the CP-SAT solver):
+    The objective is a strict priority order, NOT a weighted blend of
+    coverage against efficiency:
+        1. feasibility  (no broken FCG chain / unavailable aircraft / wrong start)
+        2. coverage     (assign as many flights as possible — a published
+                         schedule must be flown; this is a hard priority, never
+                         traded away for efficiency)
+        3. efficiency   (only AMONG equal-coverage solutions: low average idle
+                         and fuel per assigned flight)
 
-    Critical design choice: idle and fuel penalties are normalized
-    PER ASSIGNED FLIGHT, not as totals. Otherwise the algorithm can
-    "cheat" by assigning very few flights to minimize absolute idle
-    and fuel costs - which technically maximizes fitness but gives
-    a useless solution.
+    This mirrors how the CP-SAT solver already behaves (coverage reward
+    dominates its objective), so the genetic algorithm and CP-SAT optimise the
+    SAME preference order — a GA-vs-CP-SAT comparison then reflects only the
+    search method, not a different objective. The user's idle/fuel weights tune
+    the tie-break in step 3; the coverage weight is intentionally NOT a lever
+    here, because coverage is a constraint rather than a tradeable objective.
+
+    Idle and fuel are still normalized PER ASSIGNED FLIGHT (not as totals) so
+    the efficiency tie-break cannot be gamed by assigning very few flights.
 """
 
 from dataclasses import dataclass
@@ -114,13 +122,15 @@ def evaluate_solution(
     """
     Computes the fitness of a candidate solution.
 
-    Uses a multiplicative form:
-        fitness = coverage * efficiency
+    Uses a lexicographic score (see the module docstring):
+        fitness = assigned_count + efficiency        (feasible)
+        fitness = assigned_count + efficiency - (total_flights + 2)  (infeasible)
 
-    where efficiency rewards low average idle and low average fuel per
-    assigned flight, normalized to 0..1. This makes it impossible to
-    "cheat" by assigning few flights: low coverage forces low fitness
-    regardless of efficiency.
+    The integer part is the number of covered flights and the fractional part
+    (0..1) is the efficiency tie-break, so any extra covered flight outranks any
+    efficiency gain (cover-first, exactly like CP-SAT), and any feasible solution
+    outranks any infeasible one. This makes it impossible to "cheat" by assigning
+    few flights: fewer covered flights always means a strictly lower score.
 
     Parameters:
         solution: dict mapping flight_id -> tail_number (or None)
@@ -214,17 +224,19 @@ def evaluate_solution(
     else:
         efficiency = 1.0
 
-    # --- Multiplicative combination ---
-    # coverage_weight controls how much we emphasize coverage vs efficiency.
-    # With coverage_weight=0.7, low coverage dominates: at 20% coverage even
-    # perfect efficiency yields fitness ~0.34.
-    coverage_weight = weights["coverage"] * 2  # scale to 0..1 emphasis
-    coverage_weight = min(1.0, coverage_weight)
-
-    fitness = (coverage ** coverage_weight) * efficiency
-
+    # --- Lexicographic combination: feasibility > coverage > efficiency ---
+    # Coverage is the PRIMARY goal and is never traded away for efficiency, so
+    # the GA covers as many flights as it can first and only then minimises idle
+    # and fuel — the same preference order the CP-SAT solver enforces. Encoded as
+    # one score so the GA's max-fitness machinery is unchanged: the integer part
+    # is the covered-flight count and the fractional part (0..1) is the
+    # efficiency, so any extra covered flight outranks any efficiency gain.
+    # Infeasible solutions are pushed below every feasible one (a rotation with a
+    # broken FCG chain, an unavailable aircraft, or the wrong start airport is
+    # invalid) so the search repairs feasibility first.
+    fitness = assigned_count + efficiency
     if not is_feasible:
-        fitness *= 0.1  # multiplicative penalty: nearly zero out the score
+        fitness -= (total_flights + 2)
 
     return FitnessBreakdown(
         fitness=fitness,
