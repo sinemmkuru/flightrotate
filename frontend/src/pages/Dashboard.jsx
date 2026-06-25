@@ -27,6 +27,7 @@ import {
   getOptimizeStatus,
   getAssignments,
   getUnassigned,
+  getCapacitySuggestion,
   getBaseline,
 } from "../api/client";
 import useAppStore from "../store/useAppStore";
@@ -53,6 +54,8 @@ function Dashboard() {
   const [run, setRun] = useState(null);
   const [assignments, setAssignments] = useState([]);
   const [unassigned, setUnassigned] = useState(null);
+  const [capacity, setCapacity] = useState(null);
+  const [capacityLoading, setCapacityLoading] = useState(false);
   const [baseline, setBaseline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -88,6 +91,7 @@ function Dashboard() {
     setLoading(true);
     setError(null);
     setSelectedFlight(null);
+    setCapacity(null);
     try {
       // Prefer the published plan of record; fall back to the newest run.
       const published = await getPublishedPlan().catch(() => null);
@@ -169,6 +173,18 @@ function Dashboard() {
     } finally {
       setProgress(null);
       setIsOptimizing(false);
+    }
+  }
+
+  async function handlePlanCapacity() {
+    setCapacityLoading(true);
+    try {
+      setCapacity(await getCapacitySuggestion());
+    } catch (err) {
+      console.error("capacity suggestion failed", err);
+      setCapacity({ available: false, reason: "analysis failed" });
+    } finally {
+      setCapacityLoading(false);
     }
   }
 
@@ -540,6 +556,80 @@ function Dashboard() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 16,
+                  paddingTop: 12,
+                  borderTop: "1px solid var(--border, #2a2a2a)",
+                }}
+              >
+                <button
+                  className="btn"
+                  onClick={handlePlanCapacity}
+                  disabled={capacityLoading}
+                >
+                  {capacityLoading
+                    ? "Analyzing…"
+                    : "Plan capacity to cover all flights →"}
+                </button>
+
+                {capacity && capacity.available === false && (
+                  <p className="hint small">
+                    Capacity analysis unavailable ({capacity.reason}).
+                  </p>
+                )}
+                {capacity && capacity.full_coverage && (
+                  <p className="hint small">
+                    The current fleet already covers every flight — no extra
+                    aircraft needed.
+                  </p>
+                )}
+                {capacity && capacity.available && !capacity.full_coverage && (
+                  <div style={{ marginTop: 10 }}>
+                    <p style={{ margin: "0 0 8px" }}>
+                      Add <strong>{capacity.add_aircraft}</strong> aircraft to lift
+                      coverage {(capacity.current.coverage * 100).toFixed(0)}% →{" "}
+                      <strong>
+                        {(capacity.suggested.coverage * 100).toFixed(0)}%
+                      </strong>{" "}
+                      (fleet {capacity.current.aircraft} →{" "}
+                      {capacity.suggested.aircraft}).
+                    </p>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginBottom: 8,
+                      }}
+                    >
+                      {Object.entries(capacity.by_airport).map(([ap, n]) => (
+                        <span
+                          key={ap}
+                          style={{
+                            padding: "2px 10px",
+                            border: "1px solid #10b981",
+                            borderRadius: 12,
+                            color: "#10b981",
+                            fontSize: 13,
+                          }}
+                        >
+                          {ap} ×{n}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="hint small">
+                      Estimated wet-lease cost:{" "}
+                      <strong>
+                        ${capacity.estimated_daily_cost_usd.toLocaleString()}/day
+                      </strong>{" "}
+                      (@ ${capacity.lease_cost_per_aircraft_usd.toLocaleString()}
+                      /aircraft). Add them in Fleet management, then re-optimize.
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
           )}

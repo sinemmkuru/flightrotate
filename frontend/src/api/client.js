@@ -151,6 +151,13 @@ export async function getUnassigned(runId) {
   return res.data; // { summary: { total, by_reason }, flights: [...] }
 }
 
+// Lever A: how many extra aircraft, and where, to cover every flight (with an
+// estimated wet-lease cost). Read-only what-if; re-solves with CP-SAT.
+export async function getCapacitySuggestion() {
+  const res = await client.get("/capacity-suggestion");
+  return res.data;
+}
+
 // Map view: all airports
 export async function getAirports() {
   const res = await client.get("/airports");

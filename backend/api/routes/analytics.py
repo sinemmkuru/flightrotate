@@ -205,6 +205,41 @@ def unpublish_run(run_id: str, db: Session = Depends(get_db),
     return _run_to_summary(run)
 
 
+@router.get("/capacity-suggestion")
+def capacity_suggestion(db: Session = Depends(get_db)):
+    """
+    Lever A: how many extra aircraft, and where, would make every scheduled
+    flight in the active plan flyable — with an estimated wet-lease cost. A
+    read-only what-if (it re-solves with CP-SAT but never changes the fleet).
+    """
+    from persistence.models import Flight, Aircraft, Airport
+    from engine.capacity import suggest_capacity
+
+    plan_id = get_active_plan_id(db)
+    flights = (
+        db.query(Flight)
+        .filter(
+            Flight.status == "scheduled", Flight.deleted_at == None,  # noqa: E711
+            Flight.plan_id == plan_id,
+        )
+        .all()
+    )
+    aircraft_list = (
+        db.query(Aircraft)
+        .filter(Aircraft.status == "active", Aircraft.deleted_at == None)  # noqa: E711
+        .all()
+    )
+    if not flights or not aircraft_list:
+        return {"available": False, "reason": "no flights or aircraft loaded"}
+
+    airport_turnarounds = {
+        ap.iata_code: ap.min_turnaround_min
+        for ap in db.query(Airport).filter(Airport.deleted_at.is_(None)).all()
+        if ap.min_turnaround_min is not None
+    }
+    return suggest_capacity(flights, aircraft_list, airport_turnarounds)
+
+
 @router.get("/runs/{run_id}/unassigned")
 def get_unassigned(run_id: str, db: Session = Depends(get_db)):
     """
