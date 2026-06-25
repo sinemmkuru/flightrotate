@@ -143,9 +143,10 @@ class OptimizationRun(Base):
     # past-flight locking) prefer the published run, falling back to the newest.
     status = Column(String(20), default="draft", nullable=False)
 
-    # Objective agirliklari (toplam = 1.0)
+    # Objective agirliklari. coverage artik bir kisit (her zaman maksimize edilir);
+    # idle ve robustness ikincil verimlilik-vs-dayaniklilik dengesini ayarlar.
     weight_idle = Column(Float, nullable=False)
-    weight_fuel = Column(Float, nullable=False)
+    weight_robustness = Column(Float, nullable=False)
     weight_coverage = Column(Float, nullable=False)
 
     # Algoritmaya ozel parametreler (population_size, generations vb.) - esnek JSON

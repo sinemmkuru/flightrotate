@@ -13,7 +13,7 @@ from engine.cp_sat_solver import run_cp_sat
 from engine.baseline import greedy_baseline
 from factories import make_flight, make_aircraft, dt
 
-W = {"coverage": 0.5, "idle": 0.25, "fuel": 0.25}
+W = {"coverage": 0.5, "idle": 0.25, "robustness": 0.25}
 FAST = {"population_size": 30, "generations": 25, "tournament_size": 3,
         "elitism_count": 3, "mutation_rate": 0.3}
 

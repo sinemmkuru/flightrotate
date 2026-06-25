@@ -37,7 +37,7 @@ def _get(path, timeout=60):
 
 def run(algorithm, **extra):
     body = {"algorithm": algorithm,
-            "weights": {"coverage": 0.5, "idle": 0.25, "fuel": 0.25}}
+            "weights": {"coverage": 0.5, "idle": 0.25, "robustness": 0.25}}
     body.update(extra)
     resp = _post("/optimize", body)
     return _get(f"/runs/{resp['run_id']}")["kpi"]

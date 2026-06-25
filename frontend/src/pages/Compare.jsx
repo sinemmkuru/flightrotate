@@ -91,7 +91,9 @@ function ScenarioCard({ scenario, label, isWinner }) {
           coverage {scenario.weight_coverage.toFixed(2)}
         </span>
         <span className="chip">idle {scenario.weight_idle.toFixed(2)}</span>
-        <span className="chip">fuel {scenario.weight_fuel.toFixed(2)}</span>
+        <span className="chip">
+          robustness {scenario.weight_robustness.toFixed(2)}
+        </span>
       </div>
     </div>
   );

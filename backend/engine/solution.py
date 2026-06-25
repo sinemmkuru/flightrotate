@@ -17,18 +17,25 @@ Fitness design (lexicographic — aligned with the CP-SAT solver):
         2. coverage     (assign as many flights as possible — a published
                          schedule must be flown; this is a hard priority, never
                          traded away for efficiency)
-        3. efficiency   (only AMONG equal-coverage solutions: low average idle
-                         and fuel per assigned flight)
+        3. efficiency   (only AMONG equal-coverage solutions: a balance of low
+                         idle time and high robustness — see below)
 
     This mirrors how the CP-SAT solver already behaves (coverage reward
     dominates its objective), so the genetic algorithm and CP-SAT optimise the
     SAME preference order — a GA-vs-CP-SAT comparison then reflects only the
-    search method, not a different objective. The user's idle/fuel weights tune
-    the tie-break in step 3; the coverage weight is intentionally NOT a lever
-    here, because coverage is a constraint rather than a tradeable objective.
+    search method, not a different objective. The user's idle/robustness weights
+    tune the tie-break in step 3; the coverage weight is intentionally NOT a
+    lever, because coverage is a constraint rather than a tradeable objective.
 
-    Idle and fuel are still normalized PER ASSIGNED FLIGHT (not as totals) so
-    the efficiency tie-break cannot be gamed by assigning very few flights.
+    The two tie-break components are genuinely opposed: idle rewards tighter
+    rotations (less ground time) while robustness rewards turnaround buffer that
+    can absorb delays, so the weights choose a point on the efficiency-vs-
+    resilience spectrum. Fuel is deliberately NOT an objective: with a fixed
+    flight schedule the trip fuel is constant (every flight is flown by some
+    aircraft), so the only fuel the rotation could influence is APU/idle fuel —
+    already captured by the idle term. Fuel and CO2 are therefore reported as
+    KPIs, not optimised. Both components are normalized PER ASSIGNED FLIGHT (not
+    as totals) so the tie-break cannot be gamed by assigning very few flights.
 """
 
 from dataclasses import dataclass
@@ -90,25 +97,31 @@ class FitnessBreakdown:
     assigned_count: int      # number of flights assigned
     total_flights: int       # total flights in the problem
     total_idle_minutes: int  # sum of idle time between consecutive flights
-    total_fuel_kg: float     # sum of flight fuel + APU fuel
+    total_fuel_kg: float     # sum of flight fuel + APU fuel (a reported KPI)
     is_feasible: bool        # True if no constraint is violated
-    ron_nights: int = 0      # NEW: overnight (remain-over-night) stops
+    ron_nights: int = 0      # overnight (remain-over-night) stops
+    total_tight_risk: float = 0.0  # sum of tight-connection risk (robustness)
 
 
-# Default objective weights (must sum to 1.0).
-# Coverage weighted highest because covering more flights is the
-# primary business goal; idle and fuel are secondary efficiency goals.
+# Default objective weights. Coverage is a hard priority (a constraint, not a
+# tradeable weight — see the combination below); the idle and robustness weights
+# only balance the secondary efficiency-vs-resilience tie-break and need only a
+# meaningful ratio between them.
 DEFAULT_WEIGHTS = {
     "coverage": 0.50,
     "idle": 0.25,
-    "fuel": 0.25,
+    "robustness": 0.25,
 }
 
 # Per-flight normalization references.
 # These are realistic averages for B737-800 domestic Turkish operations
-# and put idle/fuel penalties on the same scale as coverage (0..~1).
+# and put the idle/robustness scores on the same 0..1 scale.
 IDLE_PER_FLIGHT_REFERENCE = 90.0      # 90 min idle per flight is "average"
-FUEL_PER_FLIGHT_REFERENCE = 2500.0    # 2500 kg per flight is "average"
+FUEL_PER_FLIGHT_REFERENCE = 2500.0    # 2500 kg per flight (used only for the fuel KPI)
+# Per-flight tight-connection risk (minutes of shortfall) at which the robustness
+# score hits 0. Equal to the connection-graph comfort buffer: a rotation whose
+# connections sit, on average, a full buffer below comfort is maximally fragile.
+ROBUSTNESS_RISK_REFERENCE = 15.0
 
 
 def evaluate_solution(
@@ -136,8 +149,10 @@ def evaluate_solution(
         solution: dict mapping flight_id -> tail_number (or None)
         flights_by_id: dict mapping flight_id -> Flight ORM object
         graph: the Flight Connection Graph (networkx DiGraph)
-        weights: dict with keys 'coverage', 'idle', 'fuel'. Used to weight
-                 the efficiency components. Defaults to DEFAULT_WEIGHTS.
+        weights: dict with keys 'coverage', 'idle', 'robustness'. Only the
+                 idle/robustness pair is used here (to weight the efficiency
+                 tie-break); coverage is a hard priority. Defaults to
+                 DEFAULT_WEIGHTS.
         aircraft_caps: optional {tail: (available_from, maintenance_due)} map
                  (see build_aircraft_caps). When provided, a rotation that
                  assigns a flight to an aircraft that cannot legally operate it
@@ -174,6 +189,7 @@ def evaluate_solution(
     total_idle_minutes = 0
     ron_nights = 0
     total_fuel = 0.0
+    total_tight_risk = 0.0
     is_feasible = True
 
     for tail, flight_ids in by_aircraft.items():
@@ -200,34 +216,45 @@ def evaluate_solution(
             idle = edge["idle_minutes"]
             total_idle_minutes += idle
             total_fuel += idle_fuel_kg(idle)
+            total_tight_risk += edge.get("tight_risk", 0.0)
             if edge.get("is_overnight"):
                 ron_nights += 1
 
-    # --- Efficiency: 0..1 score combining idle and fuel quality ---
-    # Lower idle/fuel per flight -> higher efficiency.
+    # --- Efficiency: 0..1 tie-break combining idle and robustness quality ---
+    # Two genuinely opposed secondary goals:
+    #   idle_score       — lower ground time per flight (tighter, more efficient)
+    #   robustness_score — fewer tight connections (more turnaround buffer to
+    #                      absorb delays). These pull against each other, so the
+    #                      idle/robustness weights pick a point on the
+    #                      efficiency-vs-resilience spectrum. (Fuel is NOT an
+    #                      objective: with a fixed schedule trip fuel is constant,
+    #                      so it is reported as a KPI, not optimised here.)
     if assigned_count > 0:
         avg_idle = total_idle_minutes / assigned_count
-        avg_fuel = total_fuel / assigned_count
+        avg_risk = total_tight_risk / assigned_count
     else:
         avg_idle = IDLE_PER_FLIGHT_REFERENCE * 2
-        avg_fuel = FUEL_PER_FLIGHT_REFERENCE * 2
+        avg_risk = ROBUSTNESS_RISK_REFERENCE
 
     # Each component: 1.0 means "as good as reference", 0.0 means "twice as bad"
+    # (idle) / "maximally fragile" (robustness).
     idle_score = max(0.0, 1.0 - avg_idle / (IDLE_PER_FLIGHT_REFERENCE * 2))
-    fuel_score = max(0.0, 1.0 - avg_fuel / (FUEL_PER_FLIGHT_REFERENCE * 2))
+    robustness_score = max(0.0, 1.0 - avg_risk / ROBUSTNESS_RISK_REFERENCE)
 
     # Weighted average of the two efficiency components
     idle_w = weights["idle"]
-    fuel_w = weights["fuel"]
-    if idle_w + fuel_w > 0:
-        efficiency = (idle_w * idle_score + fuel_w * fuel_score) / (idle_w + fuel_w)
+    robustness_w = weights["robustness"]
+    if idle_w + robustness_w > 0:
+        efficiency = (
+            idle_w * idle_score + robustness_w * robustness_score
+        ) / (idle_w + robustness_w)
     else:
         efficiency = 1.0
 
     # --- Lexicographic combination: feasibility > coverage > efficiency ---
     # Coverage is the PRIMARY goal and is never traded away for efficiency, so
-    # the GA covers as many flights as it can first and only then minimises idle
-    # and fuel — the same preference order the CP-SAT solver enforces. Encoded as
+    # the GA covers as many flights as it can first and only then optimises the
+    # idle/robustness tie-break — the same preference order CP-SAT enforces. Encoded as
     # one score so the GA's max-fitness machinery is unchanged: the integer part
     # is the covered-flight count and the fractional part (0..1) is the
     # efficiency, so any extra covered flight outranks any efficiency gain.
@@ -247,4 +274,5 @@ def evaluate_solution(
         total_fuel_kg=total_fuel,
         is_feasible=is_feasible,
         ron_nights=ron_nights,
+        total_tight_risk=total_tight_risk,
     )

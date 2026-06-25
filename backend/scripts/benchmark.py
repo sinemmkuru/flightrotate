@@ -96,7 +96,7 @@ def run_solver(algorithm, seed=None, time_limit=None):
     """Trigger one optimization; return (kpi_dict, solve_status)."""
     body = {
         "algorithm": algorithm,
-        "weights": {"coverage": 0.5, "idle": 0.25, "fuel": 0.25},
+        "weights": {"coverage": 0.5, "idle": 0.25, "robustness": 0.25},
     }
     if seed is not None:
         body["seed"] = seed

@@ -25,12 +25,13 @@ import "./Configure.css";
 
 // Coverage is a HARD priority — both solvers (GA + CP-SAT) maximize it first and
 // never trade it for efficiency, so it is not a tunable weight. The only lever is
-// the efficiency TIE-BREAK between equal-coverage plans: how to balance idle time
-// vs fuel. The two shares sum to 1.0; only their ratio affects the result.
+// the efficiency-vs-resilience TIE-BREAK between equal-coverage plans: how to
+// balance low idle time against turnaround robustness. The two shares sum to 1.0;
+// only their ratio affects the result.
 const PRESETS = {
-  balanced: { idle: 0.5, fuel: 0.5 },
-  idle: { idle: 0.8, fuel: 0.2 },
-  fuel: { idle: 0.2, fuel: 0.8 },
+  balanced: { idle: 0.5, robustness: 0.5 },
+  idle: { idle: 0.8, robustness: 0.2 },
+  robustness: { idle: 0.2, robustness: 0.8 },
 };
 
 function Configure() {
@@ -68,10 +69,10 @@ function Configure() {
   }
   const noData = missing.length > 0;
 
-  // Idle and fuel shares mirror each other (they sum to 1.0): raising one lowers
-  // the other. Coverage is not here — it is always maximized.
+  // Idle and robustness shares mirror each other (they sum to 1.0): raising one
+  // lowers the other. Coverage is not here — it is always maximized.
   function handleEffChange(key, newValue) {
-    const other = key === "idle" ? "fuel" : "idle";
+    const other = key === "idle" ? "robustness" : "idle";
     setEff({ [key]: newValue, [other]: 1 - newValue });
   }
 
@@ -87,12 +88,12 @@ function Configure() {
       // Run in the background and poll for live progress; large GA runs (high
       // generations/population) would otherwise block past the request timeout.
       // Coverage is maximized by the solver as a hard priority (not a weight), so
-      // we fix it and split the remainder by the idle/fuel balance — only the
-      // idle:fuel ratio drives the efficiency tie-break.
+      // we fix it and split the remainder by the idle/robustness balance — only
+      // the idle:robustness ratio drives the efficiency-vs-resilience tie-break.
       const weights = {
         coverage: 0.5,
         idle: 0.5 * eff.idle,
-        fuel: 0.5 * eff.fuel,
+        robustness: 0.5 * eff.robustness,
       };
       const { job_id } = await runOptimizationAsync({
         algorithm: "genetic",
@@ -147,21 +148,21 @@ function Configure() {
             onClick={() => applyPreset("balanced")}
           >
             Balanced
-            <small>idle 50 / fuel 50</small>
+            <small>idle 50 / robust 50</small>
           </button>
           <button
             className="preset-btn"
             onClick={() => applyPreset("idle")}
           >
-            Minimize idle
-            <small>idle 80 / fuel 20</small>
+            Most efficient
+            <small>idle 80 / robust 20</small>
           </button>
           <button
             className="preset-btn"
-            onClick={() => applyPreset("fuel")}
+            onClick={() => applyPreset("robustness")}
           >
-            Minimize fuel
-            <small>idle 20 / fuel 80</small>
+            Most robust
+            <small>idle 20 / robust 80</small>
           </button>
         </div>
       </section>
@@ -171,8 +172,9 @@ function Configure() {
         <h3>Objective</h3>
         <p className="hint">
           Coverage is a hard priority: both solvers assign as many flights as
-          possible first and never drop a flight to save fuel. The sliders below
-          only break ties between equal-coverage plans.
+          possible first and never drop a flight for efficiency. The sliders below
+          only break ties between equal-coverage plans — trading tighter rotations
+          (less idle) against more turnaround buffer (delay resilience).
         </p>
 
         <div
@@ -197,17 +199,17 @@ function Configure() {
         </div>
 
         <WeightSlider
-          label="Idle time"
-          description="Among equal-coverage plans, prefer less aircraft waiting"
+          label="Idle time (efficiency)"
+          description="Prefer tighter rotations with less aircraft ground time"
           value={eff.idle}
           onChange={(v) => handleEffChange("idle", v)}
           accent="orange"
         />
         <WeightSlider
-          label="Fuel"
-          description="Among equal-coverage plans, prefer lower APU/idle fuel"
-          value={eff.fuel}
-          onChange={(v) => handleEffChange("fuel", v)}
+          label="Robustness (resilience)"
+          description="Prefer turnaround buffer above the minimum to absorb delays"
+          value={eff.robustness}
+          onChange={(v) => handleEffChange("robustness", v)}
           accent="green"
         />
       </section>

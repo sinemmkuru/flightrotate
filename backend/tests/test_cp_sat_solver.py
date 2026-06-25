@@ -4,7 +4,7 @@ from engine.graph_builder import build_flight_connection_graph
 from engine.cp_sat_solver import run_cp_sat
 from factories import make_flight, make_aircraft, dt
 
-W = {"coverage": 0.5, "idle": 0.25, "fuel": 0.25}
+W = {"coverage": 0.5, "idle": 0.25, "robustness": 0.25}
 
 
 def test_solves_small_instance_to_optimality(chain_flights, one_aircraft):
@@ -42,20 +42,37 @@ def _drop_choice_scenario():
 def test_coverage_stays_primary_regardless_of_weights():
     flights, g = _drop_choice_scenario()
     one = [make_aircraft("OK", base="A")]
-    for w in ({"coverage": 0.5, "idle": 0.0, "fuel": 0.5},
-              {"coverage": 0.5, "idle": 0.5, "fuel": 0.0}):
+    for w in ({"coverage": 0.5, "idle": 0.0, "robustness": 0.5},
+              {"coverage": 0.5, "idle": 0.5, "robustness": 0.0}):
         res = run_cp_sat(flights, one, g, weights=w)
         assert res.best_fitness.assigned_count == 2  # max coverable
 
 
-def test_fuel_weight_drops_the_high_fuel_flight():
-    # With fuel weighted heavily, the long (high-fuel) flight is the one dropped.
-    flights, g = _drop_choice_scenario()
+def _robustness_choice_scenario():
+    # One aircraft at A flies F1 (A->B), then exactly one of two B->A returns:
+    # a TIGHT turnaround (50 min: 5 min slack over the 45 min minimum -> risky)
+    # or a LOOSE one (90 min: ample buffer). Both give coverage 2/3, so only the
+    # idle-vs-robustness tie-break decides which leg is flown.
+    f1 = make_flight("F1", "A", "B", dt(8), dt(9), distance_km=400)
+    tight = make_flight("F2_TIGHT", "B", "A", dt(9, 50), dt(10, 50), distance_km=400)
+    loose = make_flight("F3_LOOSE", "B", "A", dt(10, 30), dt(11, 30), distance_km=400)
+    flights = [f1, tight, loose]
+    return flights, build_flight_connection_graph(flights)
+
+
+def test_robustness_weight_prefers_the_looser_turnaround():
+    flights, g = _robustness_choice_scenario()
     one = [make_aircraft("OK", base="A")]
-    res = run_cp_sat(flights, one, g, weights={"coverage": 0.5, "idle": 0.0, "fuel": 0.5})
-    assert res.best_solution["SHORT"] is not None
-    assert res.best_solution["LONG"] is None
-    assert res.best_solution["RET"] is not None
+    # Robustness-heavy: avoid the tight turnaround -> keep the comfortable leg.
+    res = run_cp_sat(flights, one, g,
+                     weights={"coverage": 0.5, "idle": 0.0, "robustness": 0.5})
+    assert res.best_solution["F3_LOOSE"] is not None
+    assert res.best_solution["F2_TIGHT"] is None
+    # Idle-heavy: minimize ground time -> keep the tighter (less idle) leg.
+    res2 = run_cp_sat(flights, one, g,
+                      weights={"coverage": 0.5, "idle": 0.5, "robustness": 0.0})
+    assert res2.best_solution["F2_TIGHT"] is not None
+    assert res2.best_solution["F3_LOOSE"] is None
 
 
 def test_weights_none_defaults_without_error(chain_flights, one_aircraft):

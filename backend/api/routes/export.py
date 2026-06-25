@@ -176,7 +176,7 @@ def export_run_pdf(run_id: str, db: Session = Depends(get_db)):
     weights = (
         f"coverage {run.weight_coverage:.2f} / "
         f"idle {run.weight_idle:.2f} / "
-        f"fuel {run.weight_fuel:.2f}"
+        f"robustness {run.weight_robustness:.2f}"
     )
     kpi_data = [
         ["Metric", "Value"],

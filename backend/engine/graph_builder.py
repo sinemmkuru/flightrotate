@@ -62,6 +62,14 @@ MAX_IDLE_MINUTES = 240  # 4 hours
 # intermediate flights should fill the rotation, or the rotation ends there.
 MAX_OVERNIGHT_MINUTES = 1200  # 20 hours
 
+# Slack (minutes above an airport's minimum turnaround) below which a same-day
+# connection is considered "tight" and operationally risky: it has little buffer
+# to absorb an inbound delay. The robustness objective (engine.solution) prefers
+# rotations with fewer tight connections. A connection exactly at the minimum
+# carries the maximum risk (= this buffer); one with this much slack or more
+# carries zero risk. Overnight (RON) rests always carry zero risk.
+TURNAROUND_COMFORT_BUFFER = 15
+
 
 def build_flight_connection_graph(
     flights,
@@ -182,6 +190,15 @@ def build_flight_connection_graph(
             # idle_minutes is 0 for overnight, so the APU fuel term inside
             # connection_fuel_kg is naturally zero.
             fuel = connection_fuel_kg(b.distance_km, idle_minutes)
+            # Tight-connection risk for the robustness objective: how far the
+            # turnaround falls short of a comfortable buffer above this airport's
+            # minimum (turn_min). Zero for an overnight rest (ample buffer) and
+            # for any connection with >= TURNAROUND_COMFORT_BUFFER minutes of
+            # slack; rises to the buffer for a connection sitting at the minimum.
+            tight_risk = (
+                0.0 if is_overnight
+                else max(0.0, TURNAROUND_COMFORT_BUFFER - (idle_minutes - turn_min))
+            )
             graph.add_edge(
                 a.flight_id,
                 b.flight_id,
@@ -189,6 +206,7 @@ def build_flight_connection_graph(
                 fuel_cost_kg=fuel,
                 is_overnight=is_overnight,
                 gap_minutes=gap,
+                tight_risk=tight_risk,
             )
 
     return graph

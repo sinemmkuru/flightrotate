@@ -3,8 +3,8 @@ CP-SAT (exact) solver for the aircraft rotation problem.
 
 Models the problem as a minimum-cost path cover on the Flight Connection
 Graph (a DAG): choose at most `num_aircraft` vertex-disjoint chains of
-flights, maximizing covered flights (primary) and minimizing total idle
-time (secondary, which also minimizes APU fuel).
+flights, maximizing covered flights (primary) and optimizing a weighted blend
+of low idle time and high turnaround robustness (secondary).
 
 KPIs are computed with the SAME engine.solution.evaluate_solution used by
 the genetic algorithm, so GA (heuristic) and CP-SAT (exact) are directly
@@ -25,9 +25,8 @@ from ortools.sat.python import cp_model
 
 from engine.solution import (
     evaluate_solution, build_aircraft_caps, aircraft_can_fly,
-    DEFAULT_WEIGHTS, IDLE_PER_FLIGHT_REFERENCE, FUEL_PER_FLIGHT_REFERENCE,
+    DEFAULT_WEIGHTS, IDLE_PER_FLIGHT_REFERENCE, ROBUSTNESS_RISK_REFERENCE,
 )
-from engine.cost_model import flight_fuel_kg, idle_fuel_kg
 
 
 @dataclass
@@ -125,48 +124,44 @@ def run_cp_sat(
             starts_here = sum(covered[fid] - sum(in_edges[fid]) for fid in fids)
             model.Add(starts_here <= cap_at.get(origin, 0))
 
-    # --- Objective: coverage primary, weighted idle + fuel secondary ---
+    # --- Objective: coverage primary, weighted idle + robustness secondary ---
     # Coverage is the primary (lexicographic) goal: COVERAGE_REWARD is far larger
     # than any achievable secondary cost, so the solver always covers as many
-    # flights as it can first. The genetic algorithm uses the SAME lexicographic
-    # order (engine.solution: covered-flight count dominates the efficiency
-    # tie-break), so GA and CP-SAT optimise the same preference and a GA-vs-CP-SAT
-    # comparison reflects only the search method, not a different objective. This
-    # matches the business priority (a published schedule must be flown) and rules
-    # out the degenerate "cover few flights to minimise totals" solution.
+    # flights as it can first, and every covered flight earns the SAME reward (so
+    # the objective simply maximises the covered-flight count). The genetic
+    # algorithm uses the SAME lexicographic order (engine.solution: covered-flight
+    # count dominates the efficiency tie-break), so GA and CP-SAT optimise the same
+    # preference and a GA-vs-CP-SAT comparison reflects only the search method, not
+    # a different objective. This matches the business priority (a published
+    # schedule must be flown) and rules out the degenerate "cover few flights to
+    # minimise totals" solution.
     #
-    # The secondary objective now honours the user's idle AND fuel weights (fuel
-    # was previously ignored), normalised per flight against the same references
-    # the GA uses (engine.solution), so the two solvers optimise comparable
-    # objectives. Each covered flight carries its cruise/segment fuel; each chosen
-    # connection carries its idle time plus the APU fuel burned while idle. Where
-    # not all flights can be covered, the fuel weight therefore also decides which
-    # flights to drop (higher-fuel ones first). Coefficients are integer-scaled
-    # because CP-SAT requires an integer objective.
+    # The secondary objective honours the user's idle AND robustness weights,
+    # normalised against the same references the GA uses (engine.solution): each
+    # chosen connection carries its idle time (efficiency) plus its tight-turnaround
+    # risk (robustness), which pull in opposite directions. Fuel is not in the
+    # objective — with a fixed schedule trip fuel is constant, so it is a reported
+    # KPI, not a lever. Coefficients are integer-scaled because CP-SAT requires an
+    # integer objective.
     w = weights or DEFAULT_WEIGHTS
     w_idle = w.get("idle", DEFAULT_WEIGHTS["idle"])
-    w_fuel = w.get("fuel", DEFAULT_WEIGHTS["fuel"])
+    w_robust = w.get("robustness", DEFAULT_WEIGHTS["robustness"])
     SCALE = 1000
     COVERAGE_REWARD = SCALE * 100_000  # dominates any secondary cost
 
-    def _cover_cost(dist_km):
-        # Cruise/segment fuel of operating this flight, weighted and normalised.
-        return int(round(
-            w_fuel * SCALE * flight_fuel_kg(dist_km) / FUEL_PER_FLIGHT_REFERENCE
-        ))
-
-    def _edge_cost(idle_min):
-        # Idle time and the APU fuel burned during it, each weighted/normalised.
+    def _edge_cost(idle_min, tight_risk):
+        # Idle time (efficiency) and tight-connection risk (robustness), each
+        # weighted and normalised against the GA's references.
         idle_term = w_idle * SCALE * idle_min / IDLE_PER_FLIGHT_REFERENCE
-        apu_term = w_fuel * SCALE * idle_fuel_kg(idle_min) / FUEL_PER_FLIGHT_REFERENCE
-        return int(round(idle_term + apu_term))
+        risk_term = w_robust * SCALE * tight_risk / ROBUSTNESS_RISK_REFERENCE
+        return int(round(idle_term + risk_term))
 
-    cover_terms = [
-        (COVERAGE_REWARD - _cover_cost(flights_by_id[fid].distance_km or 0)) * covered[fid]
-        for fid in flight_ids
-    ]
+    cover_terms = [COVERAGE_REWARD * covered[fid] for fid in flight_ids]
     secondary_terms = [
-        _edge_cost(graph.edges[i, j]["idle_minutes"]) * x[(i, j)]
+        _edge_cost(
+            graph.edges[i, j]["idle_minutes"],
+            graph.edges[i, j].get("tight_risk", 0.0),
+        ) * x[(i, j)]
         for (i, j) in edges
     ]
     model.Maximize(sum(cover_terms) - sum(secondary_terms))

@@ -132,7 +132,7 @@ function Dashboard() {
       // (slow) runs neither block nor hit the request timeout.
       const { job_id } = await runOptimizationAsync({
         algorithm: "genetic",
-        weights: { coverage: 0.5, idle: 0.25, fuel: 0.25 },
+        weights: { coverage: 0.5, idle: 0.25, robustness: 0.25 },
         seed: 42,
         reference_time: asOf,
       });

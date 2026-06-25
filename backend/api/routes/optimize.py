@@ -118,7 +118,7 @@ def _execute_optimization(
 
     # --- 2. Validate weights sum approximately to 1.0 ---
     w = request.weights
-    weight_total = w.coverage + w.idle + w.fuel
+    weight_total = w.coverage + w.idle + w.robustness
     if not 0.95 <= weight_total <= 1.05:
         raise HTTPException(
             status_code=400,
@@ -225,7 +225,7 @@ def _execute_optimization(
     weights_dict = {
         "coverage": w.coverage,
         "idle": w.idle,
-        "fuel": w.fuel,
+        "robustness": w.robustness,
     }
     if request.parameters is not None:
         params_dict = {
@@ -309,7 +309,7 @@ def _execute_optimization(
         created_at=datetime.now(timezone.utc),
         algorithm=effective_algorithm,   # store the solver actually used
         weight_idle=w.idle,
-        weight_fuel=w.fuel,
+        weight_robustness=w.robustness,
         weight_coverage=w.coverage,
         parameters=params_record,
         coverage=plan_bd.coverage,
@@ -458,10 +458,10 @@ def optimize_async(request: OptimizeRequest, db: Session = Depends(get_db),
             ),
         )
     w = request.weights
-    if not 0.95 <= (w.coverage + w.idle + w.fuel) <= 1.05:
+    if not 0.95 <= (w.coverage + w.idle + w.robustness) <= 1.05:
         raise HTTPException(
             status_code=400,
-            detail=f"Weights must sum to ~1.0 (got {w.coverage + w.idle + w.fuel:.3f})",
+            detail=f"Weights must sum to ~1.0 (got {w.coverage + w.idle + w.robustness:.3f})",
         )
 
     total_generations = (

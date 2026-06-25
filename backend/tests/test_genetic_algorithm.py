@@ -11,7 +11,7 @@ FAST = {
     "elitism_count": 3,
     "mutation_rate": 0.3,
 }
-W = {"coverage": 0.5, "idle": 0.25, "fuel": 0.25}
+W = {"coverage": 0.5, "idle": 0.25, "robustness": 0.25}
 
 
 def test_returns_result_with_convergence_history(chain_flights, one_aircraft):

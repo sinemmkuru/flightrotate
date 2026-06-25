@@ -73,6 +73,17 @@ def ensure_schema():
             ))
             conn.commit()
 
+        # The third objective weight changed meaning from "fuel" to "robustness"
+        # (fuel is a fixed-schedule constant, so it is reported as a KPI, not
+        # optimised). Rename the column in place so existing databases keep
+        # working; old runs simply carry their old value under the new name.
+        if run_cols and "weight_fuel" in run_cols and "weight_robustness" not in run_cols:
+            conn.execute(text(
+                "ALTER TABLE optimization_runs "
+                "RENAME COLUMN weight_fuel TO weight_robustness"
+            ))
+            conn.commit()
+
         # --- Multi-plan: a plans table + plan_id on the owned tables ---
         conn.execute(text(
             "CREATE TABLE IF NOT EXISTS plans ("

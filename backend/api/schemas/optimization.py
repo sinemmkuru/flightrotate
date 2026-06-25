@@ -16,10 +16,11 @@ from pydantic import BaseModel, Field
 
 
 class ObjectiveWeights(BaseModel):
-    """Weights for the multi-objective fitness function. Must sum to ~1.0."""
+    """Objective weights. Must sum to ~1.0. Coverage is a hard priority (always
+    maximized); only the idle/robustness ratio tunes the secondary tie-break."""
     coverage: float = Field(0.50, ge=0.0, le=1.0)
     idle: float = Field(0.25, ge=0.0, le=1.0)
-    fuel: float = Field(0.25, ge=0.0, le=1.0)
+    robustness: float = Field(0.25, ge=0.0, le=1.0)
 
 
 class GAParameters(BaseModel):
@@ -122,7 +123,7 @@ class ScenarioSummary(BaseModel):
     created_at: str
     algorithm: str
     weight_idle: float
-    weight_fuel: float
+    weight_robustness: float
     weight_coverage: float
     total_flights: int
     assigned_flights: int

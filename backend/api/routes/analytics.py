@@ -44,7 +44,7 @@ def _run_to_summary(run: OptimizationRun) -> RunSummary:
         weights=ObjectiveWeights(
             coverage=run.weight_coverage,
             idle=run.weight_idle,
-            fuel=run.weight_fuel,
+            robustness=run.weight_robustness,
         ),
         kpi=KPI(
             coverage=run.coverage or 0.0,
@@ -264,7 +264,7 @@ def _scenario_summary(run, warnings: int) -> ScenarioSummary:
         created_at=run.created_at.isoformat() if run.created_at else "",
         algorithm=run.algorithm or "genetic",
         weight_idle=run.weight_idle,
-        weight_fuel=run.weight_fuel,
+        weight_robustness=run.weight_robustness,
         weight_coverage=run.weight_coverage,
         total_flights=run.total_flights or 0,
         assigned_flights=run.assigned_flights or 0,
