@@ -205,6 +205,31 @@ def unpublish_run(run_id: str, db: Session = Depends(get_db),
     return _run_to_summary(run)
 
 
+@router.get("/runs/{run_id}/unassigned")
+def get_unassigned(run_id: str, db: Session = Depends(get_db)):
+    """
+    Decision support: the flights this run could not assign, each with a reason
+    code (availability / location / capacity) and the operational lever to
+    recover it. Computed at solve time and stored on the run, so it is a faithful
+    snapshot of why coverage fell short for the fleet as it stood then.
+    """
+    run = (
+        db.query(OptimizationRun)
+        .filter(
+            OptimizationRun.run_id == run_id,
+            OptimizationRun.deleted_at == None,  # noqa: E711
+        )
+        .first()
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    params = run.parameters or {}
+    return {
+        "summary": params.get("unassigned_summary", {"total": 0, "by_reason": {}}),
+        "flights": params.get("unassigned", []),
+    }
+
+
 @router.get("/runs/{run_id}/assignments", response_model=list[AssignmentRow])
 def get_assignments(run_id: str, db: Session = Depends(get_db)):
     """

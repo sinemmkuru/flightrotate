@@ -144,6 +144,13 @@ export async function getAssignments(runId) {
   return res.data;
 }
 
+// Decision support: flights this run could not assign, each with a reason code
+// (availability / location / capacity) and the recovery lever.
+export async function getUnassigned(runId) {
+  const res = await client.get(`/runs/${runId}/unassigned`);
+  return res.data; // { summary: { total, by_reason }, flights: [...] }
+}
+
 // Map view: all airports
 export async function getAirports() {
   const res = await client.get("/airports");

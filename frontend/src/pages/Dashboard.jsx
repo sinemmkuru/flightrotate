@@ -26,6 +26,7 @@ import {
   runOptimizationAsync,
   getOptimizeStatus,
   getAssignments,
+  getUnassigned,
   getBaseline,
 } from "../api/client";
 import useAppStore from "../store/useAppStore";
@@ -51,6 +52,7 @@ function Dashboard() {
 
   const [run, setRun] = useState(null);
   const [assignments, setAssignments] = useState([]);
+  const [unassigned, setUnassigned] = useState(null);
   const [baseline, setBaseline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -97,6 +99,7 @@ function Dashboard() {
       if (!chosen) {
         setRun(null);
         setAssignments([]);
+        setUnassigned(null);
         setBaseline(null);
         setCurrentRunId(null);
         resetDateWindow([]);
@@ -106,6 +109,14 @@ function Dashboard() {
         const rows = await getAssignments(chosen.run_id);
         setAssignments(rows);
         resetDateWindow(rows);
+        // Decision support: why couldn't the rest be assigned? Never let it
+        // break the dashboard.
+        try {
+          setUnassigned(await getUnassigned(chosen.run_id));
+        } catch (uaErr) {
+          console.error("unassigned fetch failed", uaErr);
+          setUnassigned(null);
+        }
         // Baseline is independent of the run; never let it break the dashboard.
         try {
           const bl = await getBaseline();
@@ -459,6 +470,79 @@ function Dashboard() {
               </table>
             </div>
           </section>
+
+          {unassigned && unassigned.summary.total > 0 && (
+            <section className="assignment-section">
+              <h3>Unassigned flights ({unassigned.summary.total})</h3>
+              <p className="hint small">
+                The current fleet cannot fly these scheduled flights. Each shows
+                why and the operational lever to recover it — instead of silently
+                cancelling a sold flight.
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  margin: "4px 0 12px",
+                }}
+              >
+                {Object.entries(unassigned.summary.by_reason).map(([r, n]) => (
+                  <span
+                    key={r}
+                    style={{
+                      padding: "2px 10px",
+                      border: `1px solid ${reasonColor(r)}`,
+                      borderRadius: 12,
+                      color: reasonColor(r),
+                      fontSize: 13,
+                    }}
+                  >
+                    {reasonLabel(r)}: <strong>{n}</strong>
+                  </span>
+                ))}
+              </div>
+              <div className="table-wrapper">
+                <table className="assignment-table">
+                  <thead>
+                    <tr>
+                      <th>Flight</th>
+                      <th>Route</th>
+                      <th>Departure</th>
+                      <th>Reason</th>
+                      <th>Recommended lever</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unassigned.flights.map((f) => (
+                      <tr key={f.flight_id}>
+                        <td>{f.flight_number}</td>
+                        <td>
+                          {f.origin} → {f.destination}
+                        </td>
+                        <td>{formatTime(f.scheduled_departure)}</td>
+                        <td>
+                          <span
+                            style={{
+                              background: reasonColor(f.reason),
+                              color: "#fff",
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              fontSize: 12,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {reasonLabel(f.reason)}
+                          </span>
+                        </td>
+                        <td>{f.lever}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </>
       )}
 
@@ -521,6 +605,19 @@ function BaselineMetric({ label, text, good, bad }) {
 function formatTime(isoString) {
   const d = new Date(isoString);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// Reason-code styling for unassigned flights (matches engine.diagnosis).
+function reasonColor(reason) {
+  if (reason === "capacity") return "#f59e0b"; // amber — add aircraft
+  if (reason === "location") return "#378ADD"; // blue — position/base aircraft
+  return "#ef4444"; // availability — red
+}
+
+function reasonLabel(reason) {
+  if (reason === "capacity") return "Capacity";
+  if (reason === "location") return "Location";
+  return "Availability";
 }
 
 export default Dashboard;

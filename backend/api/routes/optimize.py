@@ -299,6 +299,17 @@ def _execute_optimization(
         combined_solution, all_flights_by_id, full_graph, weights_dict, caps
     )
 
+    # --- 7b. Decision support: diagnose every unassigned flight ---
+    # Rather than silently leaving sold flights uncovered, classify WHY each one
+    # could not be placed (availability / location / capacity) so the run reports
+    # the operational lever to recover it. Uses the effective fleet positions, so
+    # the reasons reflect where aircraft actually stand for this plan.
+    from engine.diagnosis import diagnose_unassigned, summarize_reasons
+    unassigned = diagnose_unassigned(
+        combined_solution, all_flights_by_id, full_graph,
+        effective_aircraft, aircraft_starts,
+    )
+
     # --- 8. Persist the run ---
     run_id = str(uuid.uuid4())
     fuel_kg = plan_bd.total_fuel_kg
@@ -307,6 +318,8 @@ def _execute_optimization(
         "reference_time": reference_time.isoformat(),
         "locked_past_flights": len(locked_past),
         "future_flights": len(future_flights),
+        "unassigned": unassigned,
+        "unassigned_summary": summarize_reasons(unassigned),
     }
     new_run = OptimizationRun(
         run_id=run_id,
