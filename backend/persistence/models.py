@@ -181,7 +181,7 @@ class Assignment(Base):
     sequence_order = Column(Integer, nullable=False)     # Ucagin gunluk rotasinda kacinci ucus
     turnaround_minutes = Column(Integer)                 # Onceki ucustan bu ucusa gecen sure
     fuel_kg = Column(Float)                              # Bu ucusun yakit tuketimi
-    turnaround_warning = Column(Boolean, default=False)  # 45 dk altindaysa True
+    turnaround_warning = Column(Boolean, default=False)  # havalimani min turnaround'una yakinsa True
 
     run = relationship("OptimizationRun", back_populates="assignments")
     flight = relationship("Flight", back_populates="assignments")

@@ -335,7 +335,14 @@ def _execute_optimization(
     for tail, ids in by_aircraft.items():
         ids.sort(key=lambda fid: flights_by_id[fid].scheduled_departure)
 
-    MIN_TURNAROUND = 45  # warning threshold in minutes
+    # A connection is "tight" when its ground time is within TIGHT_TURNAROUND_BUFFER
+    # minutes of the MINIMUM turnaround for the airport where the aircraft sits
+    # (flight.origin) — the same per-airport minimum the connection graph enforces,
+    # so the warning is consistent with feasibility instead of a global 45 min flag
+    # (which never fired at default-45 airports and false-alarmed at faster ones).
+    # An overnight (RON) connection is a parked rest, not a turnaround: its long
+    # ground gap is not reported as turnaround_minutes and never warns.
+    TIGHT_TURNAROUND_BUFFER = 15  # minutes above the airport minimum still "tight"
 
     for tail, flight_ids in by_aircraft.items():
         for seq, fid in enumerate(flight_ids):
@@ -343,10 +350,20 @@ def _execute_optimization(
             turnaround = None
             warning = False
             if seq > 0:
-                prev_flight = flights_by_id[flight_ids[seq - 1]]
-                gap = flight.scheduled_departure - prev_flight.scheduled_arrival
-                turnaround = int(gap.total_seconds() / 60)
-                warning = turnaround < MIN_TURNAROUND
+                prev_fid = flight_ids[seq - 1]
+                prev_flight = flights_by_id[prev_fid]
+                # Read the connection's overnight classification from the full-plan
+                # graph (single source of truth) so a parked-overnight gap isn't
+                # surfaced as an ~800-minute "turnaround".
+                is_overnight = (
+                    full_graph.has_edge(prev_fid, fid)
+                    and full_graph.edges[prev_fid, fid].get("is_overnight", False)
+                )
+                if not is_overnight:
+                    gap = flight.scheduled_departure - prev_flight.scheduled_arrival
+                    turnaround = int(gap.total_seconds() / 60)
+                    ap_min = airport_turnarounds.get(flight.origin, DEFAULT_TURN)
+                    warning = turnaround < ap_min + TIGHT_TURNAROUND_BUFFER
 
             db.add(Assignment(
                 run_id=run_id,
