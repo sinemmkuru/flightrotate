@@ -22,6 +22,7 @@ import {
   uploadAircraft,
 } from "../api/client";
 import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
+import useAppStore from "../store/useAppStore";
 import "./Upload.css";
 
 const SIZE_PRESETS = [
@@ -292,6 +293,7 @@ function FlightPreview({ file, flightsImported, fleetLoaded }) {
 
 function Upload() {
   const isAdmin = useAuthStore(selectIsAdmin);
+  const bumpPlanRefresh = useAppStore((s) => s.bumpPlanRefresh);
   const [selectedSize, setSelectedSize] = useState("medium");
   const [generating, setGenerating] = useState(false);
   const [lastGenerated, setLastGenerated] = useState(null);
@@ -340,6 +342,7 @@ function Upload() {
       });
       setLastGenerated(result);
       setHasRuns(false); // new data, no runs yet
+      bumpPlanRefresh(); // active plan's flight count changed -> refresh sidebar
     } catch (err) {
       // Wipe protection: a published plan exists. Confirm, then force.
       if (err.response?.status === 409 && !force) {
@@ -376,6 +379,7 @@ function Upload() {
           ? await uploadFlights(file, force, flightMode)
           : await uploadAircraft(file, force);
       setState({ uploading: false, file, result: res });
+      if (res?.ok) bumpPlanRefresh(); // schedule/fleet changed -> refresh sidebar
     } catch (e) {
       // Wipe protection: a published plan exists. Confirm, then force.
       if (e?.response?.status === 409 && !force) {

@@ -15,16 +15,20 @@ import {
   deletePlan,
 } from "../api/client";
 import useAuthStore, { selectIsAdmin } from "../store/useAuthStore";
+import useAppStore from "../store/useAppStore";
 import "./PlanSwitcher.css";
 
 function PlanSwitcher() {
   const isAdmin = useAuthStore(selectIsAdmin);
+  // Reload the plan meta whenever a page signals the active plan's data changed
+  // (generate / upload / optimize), so "X flights · Y runs" stays live.
+  const planRefreshKey = useAppStore((s) => s.planRefreshKey);
   const [plans, setPlans] = useState([]);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [planRefreshKey]);
 
   async function load() {
     try {

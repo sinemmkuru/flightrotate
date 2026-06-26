@@ -36,7 +36,7 @@ const PRESETS = {
 
 function Configure() {
   const navigate = useNavigate();
-  const { isOptimizing, setIsOptimizing } = useAppStore();
+  const { isOptimizing, setIsOptimizing, bumpPlanRefresh } = useAppStore();
   const isAdmin = useAuthStore(selectIsAdmin);
 
   const [eff, setEff] = useState(PRESETS.balanced);
@@ -112,6 +112,7 @@ function Configure() {
         if (status.status === "failed") {
           setError(`Optimization failed: ${status.error}`);
         } else {
+          bumpPlanRefresh(); // a new run exists -> refresh sidebar plan meta
           navigate("/dashboard"); // completed
         }
         break;

@@ -48,8 +48,8 @@ function nowLocalInput() {
 }
 
 function Dashboard() {
-  const { currentRunId, setCurrentRunId, isOptimizing, setIsOptimizing } =
-    useAppStore();
+  const { currentRunId, setCurrentRunId, isOptimizing, setIsOptimizing,
+    bumpPlanRefresh } = useAppStore();
   const isAdmin = useAuthStore(selectIsAdmin);
 
   const [run, setRun] = useState(null);
@@ -167,6 +167,7 @@ function Dashboard() {
           setError(`Optimization failed: ${status.error}`);
         } else {
           await loadLatestRun(); // completed -> pull in the new run
+          bumpPlanRefresh(); // a new run exists -> refresh sidebar plan meta
         }
         break;
       }
