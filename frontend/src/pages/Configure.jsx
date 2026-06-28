@@ -40,6 +40,10 @@ function Configure() {
   const isAdmin = useAuthStore(selectIsAdmin);
 
   const [eff, setEff] = useState(PRESETS.balanced);
+  // Solver choice: "auto" lets the backend pick CP-SAT for small instances and
+  // the GA for large ones; the user can also force one explicitly. The advanced
+  // hyperparameters below only affect the genetic algorithm.
+  const [algorithm, setAlgorithm] = useState("auto");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [params, setParams] = useState({
     population_size: 100,
@@ -96,7 +100,7 @@ function Configure() {
         robustness: 0.5 * eff.robustness,
       };
       const { job_id } = await runOptimizationAsync({
-        algorithm: "genetic",
+        algorithm,
         weights,
         parameters: params,
         seed: Math.floor(Math.random() * 1000000),
@@ -213,6 +217,40 @@ function Configure() {
           onChange={(v) => handleEffChange("robustness", v)}
           accent="green"
         />
+      </section>
+
+      {/* --- Algorithm (solver) --- */}
+      <section className="card">
+        <h3>Algorithm</h3>
+        <p className="hint">
+          CP-SAT is an exact solver (finds the optimal plan for small/medium
+          schedules); the genetic algorithm is a heuristic that scales to large
+          ones. Auto picks CP-SAT for small instances and the GA for large ones.
+        </p>
+        <div className="preset-buttons">
+          {[
+            { key: "auto", title: "Auto", sub: "CP-SAT if small, else GA" },
+            { key: "cp_sat", title: "CP-SAT (exact)", sub: "Optimal · best ≤400 flights" },
+            { key: "genetic", title: "Genetic (heuristic)", sub: "Scales to large schedules" },
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              className="preset-btn"
+              onClick={() => setAlgorithm(opt.key)}
+              style={
+                algorithm === opt.key
+                  ? {
+                      borderColor: "#378ADD",
+                      background: "rgba(55, 138, 221, 0.12)",
+                    }
+                  : undefined
+              }
+            >
+              {opt.title}
+              <small>{opt.sub}</small>
+            </button>
+          ))}
+        </div>
       </section>
 
       {/* --- Advanced GA parameters --- */}
